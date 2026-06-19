@@ -290,7 +290,7 @@
 
     <h3 style="margin-bottom:8px;">Synchroniser avec Google Drive / Google Earth</h3>
     <p class="export-note">
-      Met à jour directement le même fichier KML déjà ouvert dans votre carte Google Earth — sans rien télécharger ni re-importer manuellement.
+      Première utilisation : crée automatiquement un nouveau fichier KML dans votre Google Drive. Ouvrez-le ensuite une fois avec Google Earth (clic droit sur le fichier dans Drive > Ouvrir avec > Google Earth) pour obtenir votre carte définitive. Les synchronisations suivantes mettront à jour ce même fichier automatiquement, sans rien re-télécharger ni re-importer.
     </p>
     <button class="btn-primary" id="driveSyncBtn" onclick="syncToDrive()">Connecter Google Drive et synchroniser</button>
     <div class="status-msg" id="driveStatus"></div>
@@ -312,10 +312,9 @@
   const STORAGE_KEY = 'assainissement-survey-data';
   const hasStorage = typeof window.storage !== 'undefined';
 
-  // ----- Google Drive sync config -----
-  // Remplacez ces deux valeurs si vous changez de projet Google Cloud ou de fichier KML.
+  // Google Drive sync config
+  // Remplacez cette valeur si vous changez de projet Google Cloud.
   const GOOGLE_CLIENT_ID = '137568158771-nb9sej1vjcn2l4l575d4fga6jk16a549.apps.googleusercontent.com';
-  const DRIVE_FILE_ID = '1dglumyGwgq0xdDmyWHo6kGWD-63k74QX';
   const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
   let gisTokenClient = null;
   let driveAccessToken = null;
@@ -702,9 +701,17 @@
   }
 
   // ----- Google Drive sync -----
-  // Met à jour (PATCH) le contenu du fichier KML déjà ouvert dans Google Earth,
-  // au lieu d'en créer un nouveau. Le DRIVE_FILE_ID doit correspondre exactement
-  // au fichier visible dans drive.google.com (voir constante en haut du script).
+  // drive.file (le scope OAuth utilisé ici) ne permet d'écrire QUE sur des fichiers
+  // créés par cette application elle-même, ou explicitement choisis via le sélecteur
+  // Google (Picker). Un fichier KML uploadé manuellement par l'utilisateur AVANT
+  // l'existence de ce bouton n'est pas "vu" par l'app : Google répond 404 au lieu
+  // d'un message de permission, par mesure de confidentialité.
+  // Solution : la première synchronisation CRÉE un nouveau fichier KML (POST), géré
+  // par cette app. Son ID est ensuite mémorisé dans le stockage local de l'artifact ;
+  // toutes les synchronisations suivantes mettent à jour (PATCH) ce même fichier.
+  const DRIVE_FILE_ID_STORAGE_KEY = 'drive-kml-file-id';
+  let driveManagedFileId = null;
+
   function ensureGisTokenClient() {
     if (gisTokenClient) return gisTokenClient;
     if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
@@ -740,6 +747,63 @@
     });
   }
 
+  async function loadManagedFileId() {
+    if (driveManagedFileId) return driveManagedFileId;
+    try {
+      if (hasStorage) {
+        const r = await window.storage.get(DRIVE_FILE_ID_STORAGE_KEY, false);
+        if (r && r.value) { driveManagedFileId = r.value; return driveManagedFileId; }
+      }
+    } catch (e) { /* clé absente : normal au premier lancement */ }
+    return null;
+  }
+
+  async function saveManagedFileId(fileId) {
+    driveManagedFileId = fileId;
+    try {
+      if (hasStorage) await window.storage.set(DRIVE_FILE_ID_STORAGE_KEY, fileId, false);
+    } catch (e) { console.warn('Impossible de mémoriser le fileId Drive', e); }
+  }
+
+  async function driveCreateFile(kml) {
+    const metadata = { name: 'diagnostic-assainissement.kml', mimeType: 'application/vnd.google-earth.kml+xml' };
+    const boundary = '-------kmlsync' + Date.now();
+    const body =
+      '--' + boundary + '\r\n' +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) + '\r\n' +
+      '--' + boundary + '\r\n' +
+      'Content-Type: application/vnd.google-earth.kml+xml\r\n\r\n' +
+      kml + '\r\n' +
+      '--' + boundary + '--';
+
+    const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + driveAccessToken,
+        'Content-Type': 'multipart/related; boundary=' + boundary
+      },
+      body
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error('create-failed:' + resp.status + ':' + errText);
+    }
+    const data = await resp.json();
+    return data.id;
+  }
+
+  async function drivePatchFile(fileId, kml) {
+    return fetch('https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=media', {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'Bearer ' + driveAccessToken,
+        'Content-Type': 'application/vnd.google-earth.kml+xml'
+      },
+      body: kml
+    });
+  }
+
   async function syncToDrive() {
     if (regards.length === 0) {
       setDriveStatus('Ajoutez au moins un regard avant de synchroniser.', 'err');
@@ -764,40 +828,34 @@
 
     setDriveStatus('Connecté. Envoi des données vers Google Drive…', null);
     const kml = buildKMLString();
+    const existingId = await loadManagedFileId();
 
     try {
-      const resp = await fetch(
-        'https://www.googleapis.com/upload/drive/v3/files/' + DRIVE_FILE_ID + '?uploadType=media',
-        {
-          method: 'PATCH',
-          headers: {
-            'Authorization': 'Bearer ' + driveAccessToken,
-            'Content-Type': 'application/vnd.google-earth.kml+xml'
-          },
-          body: kml
+      if (existingId) {
+        // Un fichier géré par l'app existe déjà : on met simplement à jour son contenu.
+        const resp = await drivePatchFile(existingId, kml);
+        if (resp.ok) {
+          btn.disabled = false;
+          setDriveStatus('Synchronisé ! Actualisez la carte dans Google Earth pour voir les dernières données.', 'ok');
+          return;
         }
-      );
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.error('Drive API error', resp.status, errText);
-        btn.disabled = false;
-        if (resp.status === 404) {
-          setDriveStatus('Fichier introuvable sur Drive (ID incorrect, ou pas le bon compte Google connecté).', 'err');
-        } else if (resp.status === 403) {
-          setDriveStatus('Accès refusé par Google Drive. Vérifiez que vous êtes connecté avec le compte propriétaire du fichier.', 'err');
-        } else {
-          setDriveStatus('Erreur Google Drive (code ' + resp.status + '). Réessayez dans un instant.', 'err');
-        }
-        return;
+        // Le fichier mémorisé n'existe plus / n'est plus accessible : on en recrée un.
+        console.warn('Fichier géré introuvable (' + resp.status + '), création d\'un nouveau fichier.');
       }
 
+      const newFileId = await driveCreateFile(kml);
+      await saveManagedFileId(newFileId);
       btn.disabled = false;
-      setDriveStatus('Synchronisé ! Rouvrez ou actualisez la carte dans Google Earth pour voir les dernières données.', 'ok');
+      setDriveStatus(
+        'Premier envoi réussi : un nouveau fichier KML a été créé dans votre Google Drive ("diagnostic-assainissement.kml"). ' +
+        'Ouvrez-le une fois depuis Drive avec Google Earth (clic droit > Ouvrir avec > Google Earth) pour créer votre carte définitive. ' +
+        'Les synchronisations suivantes mettront à jour automatiquement ce même fichier.',
+        'ok'
+      );
     } catch (e) {
-      console.error('Erreur réseau Drive', e);
+      console.error('Erreur Google Drive', e);
       btn.disabled = false;
-      setDriveStatus('Connexion réseau impossible. Vérifiez votre connexion internet et réessayez.', 'err');
+      setDriveStatus('Erreur lors de l\'envoi vers Google Drive. Vérifiez votre connexion et réessayez. Détail : ' + e.message, 'err');
     }
   }
 
