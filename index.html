@@ -182,6 +182,7 @@
     transform: rotate(-45deg);
   }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -284,6 +285,15 @@
     <p class="export-note">
       <strong>Si le téléchargement ne se déclenche pas</strong> dans l'application (selon l'appareil), le fichier s'ouvrira automatiquement dans un nouvel onglet : utilisez alors le menu « Partager » ou « Enregistrer sous » de votre téléphone pour le sauvegarder dans vos fichiers ou l'envoyer par email/WhatsApp.
     </p>
+
+    <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.12);">
+
+    <h3 style="margin-bottom:8px;">Synchroniser avec Google Drive / Google Earth</h3>
+    <p class="export-note">
+      Met à jour directement le même fichier KML déjà ouvert dans votre carte Google Earth — sans rien télécharger ni re-importer manuellement.
+    </p>
+    <button class="btn-primary" id="driveSyncBtn" onclick="syncToDrive()">Connecter Google Drive et synchroniser</button>
+    <div class="status-msg" id="driveStatus"></div>
     <button class="btn-outline-danger" onclick="resetAll()">Réinitialiser toutes les données</button>
   </div>
 
@@ -301,6 +311,14 @@
   let lastGpsAccuracy = null;   // dernière précision GPS connue (m), null si placement 100% manuel
   const STORAGE_KEY = 'assainissement-survey-data';
   const hasStorage = typeof window.storage !== 'undefined';
+
+  // ----- Google Drive sync config -----
+  // Remplacez ces deux valeurs si vous changez de projet Google Cloud ou de fichier KML.
+  const GOOGLE_CLIENT_ID = '137568158771-nb9sej1vjcn2l4l575d4fga6jk16a549.apps.googleusercontent.com';
+  const DRIVE_FILE_ID = '1dglumyGwgq0xdDmyWHo6kGWD-63k74QX';
+  const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  let gisTokenClient = null;
+  let driveAccessToken = null;
 
   // ----- Init -----
   window.addEventListener('DOMContentLoaded', async () => {
@@ -645,8 +663,7 @@
   }
 
   // ----- KML export -----
-  function exportKML() {
-    if (regards.length === 0) { alert('Aucune donnée à exporter encore.'); return; }
+  function buildKMLString() {
     let kml = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n' +
       '  <name>Diagnostic Reseau Assainissement</name>\n' +
       '  <Style id="regardStyle"><IconStyle><color>ff0f79c2</color><scale>1.1</scale>' +
@@ -674,9 +691,121 @@
     });
 
     kml += '  </Folder>\n</Document>\n</kml>';
+    return kml;
+  }
 
+  function exportKML() {
+    if (regards.length === 0) { alert('Aucune donnée à exporter encore.'); return; }
+    const kml = buildKMLString();
     const filename = 'diagnostic-assainissement-' + new Date().toISOString().slice(0,10) + '.kml';
     downloadFile(kml, filename, 'application/vnd.google-earth.kml+xml');
+  }
+
+  // ----- Google Drive sync -----
+  // Met à jour (PATCH) le contenu du fichier KML déjà ouvert dans Google Earth,
+  // au lieu d'en créer un nouveau. Le DRIVE_FILE_ID doit correspondre exactement
+  // au fichier visible dans drive.google.com (voir constante en haut du script).
+  function ensureGisTokenClient() {
+    if (gisTokenClient) return gisTokenClient;
+    if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+      throw new Error('gis-not-loaded');
+    }
+    gisTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: () => {} // sera redéfini à chaque appel dans requestDriveAccess()
+    });
+    return gisTokenClient;
+  }
+
+  function requestDriveAccess() {
+    return new Promise((resolve, reject) => {
+      let client;
+      try {
+        client = ensureGisTokenClient();
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      client.callback = (resp) => {
+        if (resp && resp.access_token) {
+          driveAccessToken = resp.access_token;
+          resolve(resp.access_token);
+        } else {
+          reject(new Error('no-token'));
+        }
+      };
+      client.error_callback = (err) => reject(err || new Error('oauth-error'));
+      client.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
+    });
+  }
+
+  async function syncToDrive() {
+    if (regards.length === 0) {
+      setDriveStatus('Ajoutez au moins un regard avant de synchroniser.', 'err');
+      return;
+    }
+    const btn = document.getElementById('driveSyncBtn');
+    btn.disabled = true;
+    setDriveStatus('Connexion à votre compte Google…', null);
+
+    try {
+      await requestDriveAccess();
+    } catch (e) {
+      console.error('Erreur OAuth Google', e);
+      btn.disabled = false;
+      if (String(e.message).includes('gis-not-loaded')) {
+        setDriveStatus('Le service de connexion Google ne s\'est pas chargé (pas de connexion internet, ou script bloqué). Réessayez.', 'err');
+      } else {
+        setDriveStatus('Connexion Google annulée ou refusée. Réessayez et acceptez l\'accès à Google Drive.', 'err');
+      }
+      return;
+    }
+
+    setDriveStatus('Connecté. Envoi des données vers Google Drive…', null);
+    const kml = buildKMLString();
+
+    try {
+      const resp = await fetch(
+        'https://www.googleapis.com/upload/drive/v3/files/' + DRIVE_FILE_ID + '?uploadType=media',
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': 'Bearer ' + driveAccessToken,
+            'Content-Type': 'application/vnd.google-earth.kml+xml'
+          },
+          body: kml
+        }
+      );
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        console.error('Drive API error', resp.status, errText);
+        btn.disabled = false;
+        if (resp.status === 404) {
+          setDriveStatus('Fichier introuvable sur Drive (ID incorrect, ou pas le bon compte Google connecté).', 'err');
+        } else if (resp.status === 403) {
+          setDriveStatus('Accès refusé par Google Drive. Vérifiez que vous êtes connecté avec le compte propriétaire du fichier.', 'err');
+        } else {
+          setDriveStatus('Erreur Google Drive (code ' + resp.status + '). Réessayez dans un instant.', 'err');
+        }
+        return;
+      }
+
+      btn.disabled = false;
+      setDriveStatus('Synchronisé ! Rouvrez ou actualisez la carte dans Google Earth pour voir les dernières données.', 'ok');
+    } catch (e) {
+      console.error('Erreur réseau Drive', e);
+      btn.disabled = false;
+      setDriveStatus('Connexion réseau impossible. Vérifiez votre connexion internet et réessayez.', 'err');
+    }
+  }
+
+  function setDriveStatus(msg, kind) {
+    const el = document.getElementById('driveStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'status-msg' + (kind === 'ok' ? ' status-ok' : kind === 'err' ? ' status-err' : '');
   }
 
   // ----- Téléchargement de fichier, compatible WebView d'application (WebIntoApp, etc.) -----
