@@ -120,6 +120,30 @@
     transform: rotate(-45deg); margin-right:8px;
   }
 
+  /* Vue carte plein écran : affiche toutes les données enregistrées sans passer par
+     Google Earth (qui duplique les données à chaque import). */
+  .btn-fullmap {
+    background: var(--manhole-deep); color: white; border: none; border-radius: 10px;
+    padding: 12px 14px; font-size: 15px; font-weight: 600; width: 100%; margin-top: 10px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  #fullMapOverlay {
+    display: none; position: fixed; inset: 0; z-index: 2000; background: #0b1f17;
+  }
+  #fullMapOverlay.open { display: block; }
+  #fullMapOverlay #fullMap { position: absolute; inset: 0; }
+  #fullMapTopBar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 2001;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; background: rgba(11, 31, 23, 0.85); backdrop-filter: blur(4px);
+  }
+  #fullMapTopBar .title { color: white; font-weight: 700; font-size: 15px; }
+  #fullMapTopBar .count { color: #cfe8da; font-size: 12px; margin-top: 2px; }
+  #fullMapCloseBtn {
+    background: white; color: var(--manhole-deep); border: none; border-radius: 8px;
+    padding: 8px 14px; font-weight: 700; font-size: 14px;
+  }
+
   .position-box {
     display: flex;
     flex-wrap: wrap;
@@ -204,6 +228,8 @@
       <span><span class="dot"></span>&nbsp;Regard enregistré</span>
       <span><span class="dash"></span>&nbsp;Conduite</span>
     </div>
+
+    <button class="btn-fullmap" onclick="openFullMap()">🗺️ Voir la carte complète (tous les points enregistrés)</button>
 
     <div class="position-box">
       <div>Latitude<span class="val" id="posLat">—</span></div>
@@ -298,7 +324,18 @@
 
 </main>
 
-<footer>Les données restent sauvegardées dans cette conversation Claude tant que vous ne réinitialisez pas. Si vous ouvrez ce fichier seul dans un navigateur (hors Claude), exportez le KML avant de fermer la page pour ne rien perdre.</footer>
+<div id="fullMapOverlay">
+  <div id="fullMapTopBar">
+    <div>
+      <div class="title">Carte complète</div>
+      <div class="count" id="fullMapCount">—</div>
+    </div>
+    <button id="fullMapCloseBtn" onclick="closeFullMap()">Fermer ✕</button>
+  </div>
+  <div id="fullMap"></div>
+</div>
+
+<footer>Les données sont sauvegardées automatiquement sur cet appareil (mémoire locale du navigateur/de l'application). Si vous changez d'appareil ou désinstallez l'application, exportez le KML ou synchronisez avec Google Drive avant pour ne rien perdre.</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
@@ -331,9 +368,7 @@
     checkOAuthRedirectResult();
   });
 
-  function initMap() {
-    map = L.map('map', { zoomControl: true, maxZoom: 21 }).setView([31.7, -7.0], 6);
-
+  function addBaseLayers(targetMap) {
     // Fond satellite Google — imagerie généralement plus récente et plus détaillée
     // qu'Esri dans de nombreuses régions (Maroc inclus). Utilisé par défaut.
     const googleSatLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
@@ -374,19 +409,76 @@
       attribution: '&copy; OpenStreetMap contributors'
     });
 
-    googleHybridLayer.addTo(map);
+    googleHybridLayer.addTo(targetMap);
     L.control.layers({
       'Satellite Google (hybride)': googleHybridLayer,
       'Satellite Google': googleSatLayer,
       'Satellite Esri': esriSatelliteView,
       'Plan (rues)': planLayer
-    }, null, { position: 'topright', collapsed: true }).addTo(map);
+    }, null, { position: 'topright', collapsed: true }).addTo(targetMap);
+  }
+
+  function initMap() {
+    map = L.map('map', { zoomControl: true, maxZoom: 21 }).setView([31.7, -7.0], 6);
+    addBaseLayers(map);
 
     markerLayerGroup = L.layerGroup().addTo(map);
     lineLayerGroup = L.layerGroup().addTo(map);
 
     // Toucher la carte = placer ou déplacer le repère du futur regard
     map.on('click', (e) => placeDraftPoint(e.latlng.lat, e.latlng.lng, 'manuel'));
+  }
+
+  // ----- Carte plein écran (toutes les données, lecture seule) -----
+  let fullMap = null;
+  let fullMapMarkerLayer = null;
+  let fullMapLineLayer = null;
+
+  function openFullMap() {
+    document.getElementById('fullMapOverlay').classList.add('open');
+    if (!fullMap) {
+      fullMap = L.map('fullMap', { zoomControl: true, maxZoom: 21 }).setView([31.7, -7.0], 6);
+      addBaseLayers(fullMap);
+      fullMapMarkerLayer = L.layerGroup().addTo(fullMap);
+      fullMapLineLayer = L.layerGroup().addTo(fullMap);
+    }
+    // Leaflet a besoin d'un recalcul de taille après être passé de display:none à visible.
+    setTimeout(() => { fullMap.invalidateSize(); renderFullMap(); }, 50);
+  }
+
+  function closeFullMap() {
+    document.getElementById('fullMapOverlay').classList.remove('open');
+  }
+
+  function renderFullMap() {
+    if (!fullMap) return;
+    fullMapMarkerLayer.clearLayers();
+    fullMapLineLayer.clearLayers();
+    const bounds = [];
+
+    regards.forEach(r => {
+      const marker = L.circleMarker([r.lat, r.lon], {
+        radius: 7, color: '#c2790f', fillColor: '#c2790f', fillOpacity: 0.9, weight: 2
+      }).addTo(fullMapMarkerLayer);
+      marker.bindPopup(`<b>${escapeHTML(r.name)}</b><br>${escapeHTML(r.type || '')}${r.depth ? ' \u00b7 ' + r.depth + 'm' : ''}<br>${escapeHTML(r.note || '')}`);
+      bounds.push([r.lat, r.lon]);
+    });
+
+    conduites.forEach(c => {
+      const rFrom = regards.find(r => r.id === c.from);
+      const rTo = regards.find(r => r.id === c.to);
+      if (!rFrom || !rTo) return;
+      const line = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], { color: '#2d6a4f', weight: 4 }).addTo(fullMapLineLayer);
+      line.bindPopup(`<b>${escapeHTML(c.type)}</b>${c.diameter ? ' \u00d8' + c.diameter + 'mm' : ''}<br>${escapeHTML(c.material || '')}<br>${escapeHTML(c.note || '')}`);
+    });
+
+    if (bounds.length) fullMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 19 });
+
+    const countEl = document.getElementById('fullMapCount');
+    if (countEl) {
+      countEl.textContent = regards.length + ' regard' + (regards.length === 1 ? '' : 's') +
+        ' · ' + conduites.length + ' conduite' + (conduites.length === 1 ? '' : 's');
+    }
   }
 
   // ----- Storage (persiste dans cette conversation Claude ; ignoré gracieusement ailleurs) -----
@@ -641,6 +733,7 @@
     renderConduiteList();
     renderSelects();
     renderMap();
+    if (fullMap) renderFullMap();
   }
 
   function renderRegardList() {
