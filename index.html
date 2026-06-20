@@ -182,7 +182,6 @@
     transform: rotate(-45deg);
   }
 </style>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -316,14 +315,20 @@
   // Remplacez cette valeur si vous changez de projet Google Cloud.
   const GOOGLE_CLIENT_ID = '137568158771-nb9sej1vjcn2l4l575d4fga6jk16a549.apps.googleusercontent.com';
   const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-  let gisTokenClient = null;
+  // Clé utilisée pour mémoriser le jeton d'accès en mémoire (variable JS) pendant
+  // la session de la page, et l'action en attente (pour la reprendre après le retour
+  // de Google) dans le stockage du navigateur — nécessaire car la page est entièrement
+  // rechargée lors du flux de redirection OAuth (voir explication plus bas).
+  const DRIVE_PENDING_ACTION_KEY = 'driveOAuthPendingAction';
   let driveAccessToken = null;
+  let driveTokenExpiresAt = 0;
 
   // ----- Init -----
   window.addEventListener('DOMContentLoaded', async () => {
     initMap();
     await loadData();
     renderAll();
+    checkOAuthRedirectResult();
   });
 
   function initMap() {
@@ -712,39 +717,70 @@
   const DRIVE_FILE_ID_STORAGE_KEY = 'drive-kml-file-id';
   let driveManagedFileId = null;
 
-  function ensureGisTokenClient() {
-    if (gisTokenClient) return gisTokenClient;
-    if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
-      throw new Error('gis-not-loaded');
-    }
-    gisTokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: DRIVE_SCOPE,
-      callback: () => {} // sera redéfini à chaque appel dans requestDriveAccess()
-    });
-    return gisTokenClient;
+  // IMPORTANT — pourquoi le flux "redirection complète" plutôt qu'une popup :
+  // Google Identity Services (popup) communique le jeton d'accès à la page d'origine
+  // via window.opener / postMessage entre deux fenêtres. Quand l'app est un wrapper
+  // WebView (WebIntoApp, Appilix, etc.) et que les liens externes s'ouvrent dans le
+  // navigateur du téléphone, la popup Google s'ouvre dans un contexte totalement
+  // séparé : la communication entre les deux fenêtres est impossible, et le jeton
+  // ne revient jamais. La connexion semble alors "annulée" même après acceptation.
+  // En remplaçant la popup par une redirection complète de la page elle-même vers
+  // Google, puis retour vers cette même page avec le jeton inclus dans l'URL, on
+  // n'a plus besoin de communication entre deux fenêtres : ça fonctionne aussi bien
+  // dans un WebView qu'un navigateur classique.
+  function buildOAuthRedirectUri() {
+    // On retire tout ancien fragment (#...) pour obtenir une URL de retour stable.
+    return window.location.href.split('#')[0];
   }
 
-  function requestDriveAccess() {
-    return new Promise((resolve, reject) => {
-      let client;
-      try {
-        client = ensureGisTokenClient();
-      } catch (e) {
-        reject(e);
-        return;
-      }
-      client.callback = (resp) => {
-        if (resp && resp.access_token) {
-          driveAccessToken = resp.access_token;
-          resolve(resp.access_token);
-        } else {
-          reject(new Error('no-token'));
-        }
-      };
-      client.error_callback = (err) => reject(err || new Error('oauth-error'));
-      client.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
+  function startDriveOAuthRedirect(pendingAction) {
+    try {
+      sessionStorage.setItem(DRIVE_PENDING_ACTION_KEY, pendingAction);
+    } catch (e) { /* sessionStorage indisponible : on continue sans mémoriser */ }
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: buildOAuthRedirectUri(),
+      response_type: 'token',
+      scope: DRIVE_SCOPE,
+      include_granted_scopes: 'true',
+      prompt: 'consent'
     });
+    window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+  }
+
+  // Au chargement de la page, vérifie si on revient juste d'un aller-retour OAuth
+  // (Google ajoute #access_token=...&expires_in=... à l'URL de redirection).
+  function checkOAuthRedirectResult() {
+    if (!window.location.hash || window.location.hash.indexOf('access_token') === -1) {
+      return false;
+    }
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const token = hashParams.get('access_token');
+    const expiresIn = parseInt(hashParams.get('expires_in') || '0', 10);
+    // Nettoie l'URL (retire le fragment contenant le jeton) sans recharger la page.
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+
+    if (!token) {
+      setDriveStatus('Connexion Google annulée ou refusée. Réessayez et acceptez l\'accès à Google Drive.', 'err');
+      return true;
+    }
+
+    driveAccessToken = token;
+    driveTokenExpiresAt = Date.now() + (expiresIn || 3600) * 1000;
+
+    let pendingAction = null;
+    try { pendingAction = sessionStorage.getItem(DRIVE_PENDING_ACTION_KEY); sessionStorage.removeItem(DRIVE_PENDING_ACTION_KEY); }
+    catch (e) { /* ignore */ }
+
+    if (pendingAction === 'sync') {
+      setDriveStatus('Connecté. Reprise de la synchronisation…', null);
+      performDriveSync();
+    }
+    return true;
+  }
+
+  function hasValidDriveToken() {
+    return !!driveAccessToken && Date.now() < driveTokenExpiresAt - 5000;
   }
 
   async function loadManagedFileId() {
@@ -804,28 +840,22 @@
     });
   }
 
-  async function syncToDrive() {
+  function syncToDrive() {
     if (regards.length === 0) {
       setDriveStatus('Ajoutez au moins un regard avant de synchroniser.', 'err');
       return;
     }
-    const btn = document.getElementById('driveSyncBtn');
-    btn.disabled = true;
-    setDriveStatus('Connexion à votre compte Google…', null);
-
-    try {
-      await requestDriveAccess();
-    } catch (e) {
-      console.error('Erreur OAuth Google', e);
-      btn.disabled = false;
-      if (String(e.message).includes('gis-not-loaded')) {
-        setDriveStatus('Le service de connexion Google ne s\'est pas chargé (pas de connexion internet, ou script bloqué). Réessayez.', 'err');
-      } else {
-        setDriveStatus('Connexion Google annulée ou refusée. Réessayez et acceptez l\'accès à Google Drive.', 'err');
-      }
+    if (!hasValidDriveToken()) {
+      setDriveStatus('Redirection vers la connexion Google…', null);
+      startDriveOAuthRedirect('sync');
       return;
     }
+    performDriveSync();
+  }
 
+  async function performDriveSync() {
+    const btn = document.getElementById('driveSyncBtn');
+    if (btn) btn.disabled = true;
     setDriveStatus('Connecté. Envoi des données vers Google Drive…', null);
     const kml = buildKMLString();
     const existingId = await loadManagedFileId();
@@ -835,7 +865,7 @@
         // Un fichier géré par l'app existe déjà : on met simplement à jour son contenu.
         const resp = await drivePatchFile(existingId, kml);
         if (resp.ok) {
-          btn.disabled = false;
+          if (btn) btn.disabled = false;
           setDriveStatus('Synchronisé ! Actualisez la carte dans Google Earth pour voir les dernières données.', 'ok');
           return;
         }
@@ -845,7 +875,7 @@
 
       const newFileId = await driveCreateFile(kml);
       await saveManagedFileId(newFileId);
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
       setDriveStatus(
         'Premier envoi réussi : un nouveau fichier KML a été créé dans votre Google Drive ("diagnostic-assainissement.kml"). ' +
         'Ouvrez-le une fois depuis Drive avec Google Earth (clic droit > Ouvrir avec > Google Earth) pour créer votre carte définitive. ' +
@@ -854,7 +884,7 @@
       );
     } catch (e) {
       console.error('Erreur Google Drive', e);
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
       setDriveStatus('Erreur lors de l\'envoi vers Google Drive. Vérifiez votre connexion et réessayez. Détail : ' + e.message, 'err');
     }
   }
