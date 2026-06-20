@@ -390,28 +390,45 @@
   }
 
   // ----- Storage (persiste dans cette conversation Claude ; ignoré gracieusement ailleurs) -----
+  // window.storage n'existe que dans l'aperçu Claude Artifacts : il ne fonctionne pas
+  // une fois le site déployé sur GitHub Pages / dans l'app WebView. localStorage est
+  // donc la mémorisation principale partout ailleurs (elle persiste bien entre les
+  // ouvertures de l'app). On essaie aussi window.storage en complément quand il existe,
+  // sans jamais en dépendre.
+  function localSave(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { console.warn('localStorage indisponible', e); }
+  }
+  function localLoad(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+
   async function saveData() {
-    if (!hasStorage) return;
-    try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify({ regards, conduites }), false);
-    } catch (e) {
-      console.error('Erreur de sauvegarde', e);
+    const json = JSON.stringify({ regards, conduites });
+    localSave(STORAGE_KEY, json);
+    if (hasStorage) {
+      try { await window.storage.set(STORAGE_KEY, json, false); }
+      catch (e) { console.warn('Erreur de sauvegarde window.storage (ignorée)', e); }
     }
   }
 
   async function loadData() {
-    if (!hasStorage) return;
-    try {
-      const result = await window.storage.get(STORAGE_KEY, false);
-      if (result && result.value) {
-        const parsed = JSON.parse(result.value);
+    let raw = localLoad(STORAGE_KEY);
+    if (!raw && hasStorage) {
+      try {
+        const result = await window.storage.get(STORAGE_KEY, false);
+        if (result && result.value) raw = result.value;
+      } catch (e) { /* clé absente : normal au premier lancement */ }
+    }
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
         regards = parsed.regards || [];
         conduites = parsed.conduites || [];
-      }
-    } catch (e) {
-      regards = [];
-      conduites = [];
+        return;
+      } catch (e) { /* données corrompues : on repart à vide */ }
     }
+    regards = [];
+    conduites = [];
   }
 
   // ----- Repère orange (point en cours de placement) -----
@@ -469,10 +486,24 @@
   }
 
   // ----- Géolocalisation approximative (point de départ, à affiner ensuite) -----
+  // getCurrentPosition() avec une seule lecture renvoie souvent la position du
+  // réseau mobile (précision de plusieurs centaines de mètres) avant que le GPS
+  // satellite n'ait eu le temps de s'affiner. On utilise donc watchPosition()
+  // pendant quelques secondes et on garde la meilleure précision obtenue.
+  let gpsWatchId = null;
+  let gpsWatchTimeoutId = null;
+  const GPS_WATCH_DURATION_MS = 12000;
+  const GPS_GOOD_ENOUGH_ACCURACY_M = 15; // arrête la recherche plus tôt si déjà très précis
+
   function geoErrorHint(err) {
     if (err.code === 1) return 'Autorisation de localisation refusée ou indisponible. Touchez directement la carte pour placer le point à la main.';
     if (err.code === 3) return 'Délai de localisation dépassé. Touchez directement la carte pour placer le point à la main.';
     return 'Localisation indisponible (' + err.message + '). Touchez directement la carte pour placer le point à la main.';
+  }
+
+  function stopGpsWatch() {
+    if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+    if (gpsWatchTimeoutId !== null) { clearTimeout(gpsWatchTimeoutId); gpsWatchTimeoutId = null; }
   }
 
   function refreshPosition() {
@@ -480,19 +511,44 @@
       setPosStatus('La géolocalisation n\'est pas disponible sur cet appareil/navigateur. Touchez la carte pour placer le point manuellement.', 'err');
       return;
     }
-    setPosStatus('Recherche de votre position approximative...', '');
-    navigator.geolocation.getCurrentPosition(
+    stopGpsWatch(); // au cas où une recherche précédente tournerait encore
+
+    let bestFix = null; // { latitude, longitude, accuracy }
+    setPosStatus('Recherche GPS en cours (jusqu\'à ' + Math.round(GPS_WATCH_DURATION_MS / 1000) + ' s pour affiner la précision)…', '');
+
+    gpsWatchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
-        lastGpsAccuracy = accuracy;
-        map.setView([latitude, longitude], 19);
-        placeDraftPoint(latitude, longitude, 'gps');
-        document.getElementById('posAcc').textContent = Math.round(accuracy) + ' m';
-        setPosStatus('Position approximative trouvée (précision ' + Math.round(accuracy) + ' m). Touchez ou glissez le repère sur l\'image satellite pour pointer l\'emplacement exact du regard.', 'ok');
+        if (!bestFix || accuracy < bestFix.accuracy) {
+          bestFix = { latitude, longitude, accuracy };
+          lastGpsAccuracy = accuracy;
+          map.setView([latitude, longitude], 19);
+          placeDraftPoint(latitude, longitude, 'gps');
+          document.getElementById('posAcc').textContent = Math.round(accuracy) + ' m';
+          setPosStatus('Précision actuelle : ' + Math.round(accuracy) + ' m — recherche d\'une meilleure précision en cours…', '');
+        }
+        if (accuracy <= GPS_GOOD_ENOUGH_ACCURACY_M) {
+          finishGpsWatch(bestFix);
+        }
       },
-      (err) => setPosStatus(geoErrorHint(err), 'err'),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      (err) => {
+        // Une erreur ponctuelle pendant le watch n'arrête pas forcément la recherche ;
+        // on ne l'affiche que si on n'a encore aucune position du tout.
+        if (!bestFix) setPosStatus(geoErrorHint(err), 'err');
+      },
+      { enableHighAccuracy: true, timeout: GPS_WATCH_DURATION_MS, maximumAge: 0 }
     );
+
+    gpsWatchTimeoutId = setTimeout(() => finishGpsWatch(bestFix), GPS_WATCH_DURATION_MS);
+
+    function finishGpsWatch(fix) {
+      stopGpsWatch();
+      if (fix) {
+        setPosStatus('Position trouvée (précision ' + Math.round(fix.accuracy) + ' m). Touchez ou glissez le repère sur l\'image satellite pour pointer l\'emplacement exact du regard.', 'ok');
+      } else {
+        setPosStatus('Position introuvable. Vérifiez que la localisation est activée (GPS) et autorisée pour cette application, puis réessayez, ou touchez directement la carte.', 'err');
+      }
+    }
   }
 
   // ----- Regards -----
@@ -785,20 +841,24 @@
 
   async function loadManagedFileId() {
     if (driveManagedFileId) return driveManagedFileId;
-    try {
-      if (hasStorage) {
+    const fromLocal = localLoad(DRIVE_FILE_ID_STORAGE_KEY);
+    if (fromLocal) { driveManagedFileId = fromLocal; return driveManagedFileId; }
+    if (hasStorage) {
+      try {
         const r = await window.storage.get(DRIVE_FILE_ID_STORAGE_KEY, false);
         if (r && r.value) { driveManagedFileId = r.value; return driveManagedFileId; }
-      }
-    } catch (e) { /* clé absente : normal au premier lancement */ }
+      } catch (e) { /* clé absente : normal au premier lancement */ }
+    }
     return null;
   }
 
   async function saveManagedFileId(fileId) {
     driveManagedFileId = fileId;
-    try {
-      if (hasStorage) await window.storage.set(DRIVE_FILE_ID_STORAGE_KEY, fileId, false);
-    } catch (e) { console.warn('Impossible de mémoriser le fileId Drive', e); }
+    localSave(DRIVE_FILE_ID_STORAGE_KEY, fileId);
+    if (hasStorage) {
+      try { await window.storage.set(DRIVE_FILE_ID_STORAGE_KEY, fileId, false); }
+      catch (e) { console.warn('Impossible de mémoriser le fileId Drive (window.storage, ignoré)', e); }
+    }
   }
 
   async function driveCreateFile(kml) {
