@@ -139,6 +139,30 @@
   }
   #fullMapTopBar .title { color: white; font-weight: 700; font-size: 15px; }
   #fullMapTopBar .count { color: #cfe8da; font-size: 12px; margin-top: 2px; }
+
+  /* Bouton flottant "Ma position" sur la carte plein écran, façon Google Maps/Earth */
+  #myLocationBtn {
+    position: absolute; z-index: 1500; right: 14px; bottom: 86px;
+    width: 46px; height: 46px; border-radius: 50%; border: none;
+    background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  #myLocationBtn.tracking { background: var(--primary-deep); color: white; }
+
+  /* Point bleu pulsant représentant la position GPS en direct, comme sur Google Maps/Earth */
+  .my-location-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #1a73e8; border: 2px solid white; box-shadow: 0 0 0 2px rgba(26,115,232,0.4);
+  }
+  .my-location-pulse {
+    position: absolute; top: 50%; left: 50%; width: 16px; height: 16px;
+    margin: -8px 0 0 -8px; border-radius: 50%; background: rgba(26,115,232,0.35);
+    animation: myLocationPulse 1.8s ease-out infinite;
+  }
+  @keyframes myLocationPulse {
+    0%   { transform: scale(1);   opacity: 0.7; }
+    100% { transform: scale(2.8); opacity: 0; }
+  }
   #fullMapCloseBtn {
     background: white; color: var(--manhole-deep); border: none; border-radius: 8px;
     padding: 8px 14px; font-weight: 700; font-size: 14px;
@@ -185,6 +209,14 @@
   .modal-sheet h3 { margin: 0 0 12px 0; color: var(--manhole-deep); }
   .modal-actions { display: flex; gap: 10px; margin-top: 14px; }
   .modal-actions > button { flex: 1; margin-top: 0; }
+
+  /* Sélecteur de couleur du regard (5 couleurs), affiché juste sous le champ N° de regard */
+  .color-picker { display: flex; gap: 10px; margin-top: 6px; }
+  .color-swatch {
+    width: 32px; height: 32px; border-radius: 50%; border: 3px solid transparent;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: pointer; padding: 0;
+  }
+  .color-swatch.selected { border-color: #1a1a1a; transform: scale(1.1); }
 
   .position-box {
     display: flex;
@@ -247,20 +279,6 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.45);
     transform: rotate(-45deg);
   }
-
-  /* Sélecteur de couleur pour les regards */
-  .color-picker-row {
-    display: flex; align-items: center; gap: 8px; margin-top: 10px;
-  }
-  .color-picker-row label { margin: 0; flex-shrink: 0; }
-  .regard-color-btn {
-    width: 28px; height: 28px; border-radius: 50%;
-    border: 3px solid transparent; cursor: pointer;
-    flex-shrink: 0; transition: transform 0.15s, border-color 0.15s;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-  }
-  .regard-color-btn:hover { transform: scale(1.18); }
-  .regard-color-btn.selected { border-color: #182620; transform: scale(1.18); }
 </style>
 </head>
 <body>
@@ -340,6 +358,7 @@
     <button id="fullMapCloseBtn" onclick="closeFullMap()">Fermer ✕</button>
   </div>
   <div id="fullMap"></div>
+  <button id="myLocationBtn" onclick="toggleMyLocationTracking()" title="Ma position">📍</button>
 
   <div id="fullMapBottomBar">
     <button id="drawModeBtn" class="draw-mode-btn" onclick="toggleDrawMode()">✏️ Dessiner un collecteur</button>
@@ -353,12 +372,10 @@
     <h3>Nouveau regard</h3>
     <label>N° de regard *</label>
     <input id="modalRegardName" placeholder="ex: R1" autocomplete="off">
+    <label>Couleur</label>
+    <div class="color-picker" id="modalRegardColorPicker"></div>
     <label>État du regard</label>
     <input id="modalRegardEtat" placeholder="ex: bon, fissuré, cassé...">
-    <div class="color-picker-row">
-      <label>Couleur</label>
-      <span id="modalRegardColorPicker"></span>
-    </div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeRegardModal()">Annuler</button>
       <button class="btn-manhole" onclick="confirmAddRegard()">Enregistrer</button>
@@ -396,12 +413,10 @@
     <h3>Modifier le regard</h3>
     <label>N° de regard *</label>
     <input id="editRegardName" placeholder="ex: R1" autocomplete="off">
+    <label>Couleur</label>
+    <div class="color-picker" id="editRegardColorPicker"></div>
     <label>État du regard</label>
     <input id="editRegardEtat" placeholder="ex: bon, fissuré, cassé...">
-    <div class="color-picker-row">
-      <label>Couleur</label>
-      <span id="editRegardColorPicker"></span>
-    </div>
     <div class="modal-actions">
       <button class="btn-outline-danger" onclick="confirmDeleteRegardFromEdit()">Supprimer</button>
       <button class="btn-manhole" onclick="confirmEditRegard()">Enregistrer</button>
@@ -443,46 +458,6 @@
   let map, markerLayerGroup, lineLayerGroup;
   const STORAGE_KEY = 'assainissement-survey-data';
   const hasStorage = typeof window.storage !== 'undefined';
-
-  // Palette de 5 couleurs pour les regards
-  const REGARD_COLORS = [
-    { id: 'orange', hex: '#c2790f', label: 'Orange (défaut)' },
-    { id: 'red',    hex: '#c0392b', label: 'Rouge'           },
-    { id: 'blue',   hex: '#1a73e8', label: 'Bleu'            },
-    { id: 'green',  hex: '#2d6a4f', label: 'Vert'            },
-    { id: 'purple', hex: '#7b2d8b', label: 'Violet'          }
-  ];
-  const DEFAULT_REGARD_COLOR = 'orange';
-
-  function regardColorHex(colorId) {
-    const c = REGARD_COLORS.find(x => x.id === colorId);
-    return c ? c.hex : REGARD_COLORS[0].hex;
-  }
-
-  // Construit le HTML du sélecteur de couleur (pour les modals nouveau/modifier regard)
-  function buildColorPickerHTML(selectedColorId) {
-    const sel = selectedColorId || DEFAULT_REGARD_COLOR;
-    return REGARD_COLORS.map(c =>
-      `<button type="button" class="regard-color-btn${c.id === sel ? ' selected' : ''}"
-        style="background:${c.hex}"
-        title="${c.label}"
-        onclick="selectRegardColor('${c.id}',this)"
-        data-color="${c.id}"></button>`
-    ).join('');
-  }
-
-  let _pendingRegardColor = DEFAULT_REGARD_COLOR;
-  let _pendingEditRegardColor = DEFAULT_REGARD_COLOR;
-
-  function selectRegardColor(colorId, btn) {
-    // Retire la sélection de tous les boutons du même sélecteur
-    btn.closest('.color-picker-row').querySelectorAll('.regard-color-btn').forEach(b => b.classList.remove('selected'));
-    btn.classList.add('selected');
-    // Distingue le modal "nouveau" du modal "modifier" par le parent
-    if (btn.closest('#regardModal')) _pendingRegardColor = colorId;
-    else if (btn.closest('#editRegardModal')) _pendingEditRegardColor = colorId;
-  }
-  window.selectRegardColor = selectRegardColor;
 
   // Google Drive sync config
   // Remplacez cette valeur si vous changez de projet Google Cloud.
@@ -568,12 +543,12 @@
   let fullMap = null;
   let fullMapMarkerLayer = null;
   let fullMapLineLayer = null;
+  let fullMapHasFitOnce = false; // évite de re-zoomer/dézoomer à chaque re-rendu (ex: pendant le dessin d'un collecteur)
   let drawMode = false;          // true = on est en train de choisir R1 puis R2 pour un collecteur
   let drawFromRegardId = null;   // id du regard "départ" déjà sélectionné en mode dessin
   let pendingNewRegardLatLng = null; // coordonnées en attente de confirmation dans la fiche "Nouveau regard"
   let editingRegardId = null;
   let editingCollecteurId = null;
-  let suppressFitBounds = false; // empêche fitBounds lors de la sélection de R2 en mode dessin
   const LONG_PRESS_MS = 480;
 
   function openFullMap() {
@@ -594,17 +569,13 @@
         openRegardModalForNewPoint(e.latlng.lat, e.latlng.lng);
       });
     }
-    setTimeout(() => {
-      fullMap.invalidateSize();
-      renderFullMap();
-      // Démarre le suivi GPS automatiquement à l'ouverture, comme Google Earth
-      startGpsTracking(true);
-    }, 50);
+    setTimeout(() => { fullMap.invalidateSize(); renderFullMap(); }, 50);
   }
 
   function closeFullMap() {
     document.getElementById('fullMapOverlay').classList.remove('open');
     exitDrawMode();
+    stopMyLocationTracking();
   }
 
   function toggleDrawMode() {
@@ -643,7 +614,6 @@
       setDrawHint('Choisissez un regard d\'arrivée différent du départ.');
       return;
     }
-    suppressFitBounds = true; // on ne veut pas de dézoom lors de l'ouverture du modal
     openCollecteurModal(drawFromRegardId, regardId);
   }
 
@@ -669,21 +639,16 @@
 
     regards.forEach(r => {
       const isDrawFrom = drawMode && drawFromRegardId === r.id;
-      const fillColor = regardColorHex(r.color);
       const marker = L.circleMarker([r.lat, r.lon], {
         radius: isDrawFrom ? 10 : 8,
         color: isDrawFrom ? '#c0392b' : '#ffffff',
         weight: isDrawFrom ? 3 : 2,
-        fillColor: fillColor,
+        fillColor: r.color || DEFAULT_REGARD_COLOR,
         fillOpacity: 0.95
       }).addTo(fullMapMarkerLayer);
 
       const label = L.marker([r.lat, r.lon], {
-        icon: L.divIcon({
-          className: 'map-label-regard',
-          html: '<span style="border-left:3px solid ' + fillColor + ';padding-left:4px">' + escapeHTML(r.name) + '</span>',
-          iconSize: null, iconAnchor: [-10, 8]
-        }),
+        icon: L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }),
         interactive: false
       }).addTo(fullMapMarkerLayer);
 
@@ -705,6 +670,9 @@
       bindLongPress(line, () => openEditCollecteurModal(c.id));
 
       // Triangle indiquant le sens d'écoulement (départ -> arrivée), au milieu du tracé.
+      // Le triangle CSS (border-top) pointe vers le bas par défaut (angle visuel 0° = bas),
+      // alors que atan2 calcule un angle où 0° = nord/haut : on ajoute donc 180° pour aligner
+      // la pointe du triangle sur la direction réelle départ -> arrivée.
       const midLat = (rFrom.lat + rTo.lat) / 2;
       const midLon = (rFrom.lon + rTo.lon) / 2;
       const angleDeg = Math.atan2(rTo.lon - rFrom.lon, rTo.lat - rFrom.lat) * 180 / Math.PI + 180;
@@ -724,8 +692,13 @@
       }).addTo(fullMapLineLayer);
     });
 
-    if (bounds.length && !pendingNewRegardLatLng && !suppressFitBounds) fullMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 19 });
-    suppressFitBounds = false; // réinitialise après chaque rendu
+    // On ne recadre/dézoome la vue qu'une seule fois (premier affichage), jamais pendant
+    // le dessin d'un collecteur (sélection R1 puis R2) ni à chaque ajout de point ultérieur :
+    // cela évite que la carte ne "saute" en arrière à chaque clic.
+    if (bounds.length && !fullMapHasFitOnce && !pendingNewRegardLatLng && !drawMode) {
+      fullMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 19 });
+      fullMapHasFitOnce = true;
+    }
 
     const countEl = document.getElementById('fullMapCount');
     if (countEl) {
@@ -783,117 +756,160 @@
     el.className = 'status-msg' + (kind === 'ok' ? ' status-ok' : kind === 'err' ? ' status-err' : '');
   }
 
-  // ----- Géolocalisation : suivi continu comme Google Earth -----
-  // On utilise watchPosition() en continu (pas de timeout court) pour affiner
-  // progressivement la précision GPS : réseau mobile d'abord (200-300 m), puis
-  // GPS satellite (5-20 m après quelques secondes à l'extérieur).
-  // Un marqueur bleu pulsant indique la position en direct sur la carte complète.
+  // ----- Géolocalisation : centre simplement la carte sur la position actuelle -----
+  // getCurrentPosition() avec une seule lecture renvoie souvent la position du
+  // réseau mobile (précision de plusieurs centaines de mètres) avant que le GPS
+  // satellite n'ait eu le temps de s'affiner. On utilise donc watchPosition()
+  // pendant quelques secondes et on garde la meilleure précision obtenue.
   let gpsWatchId = null;
-  let gpsLiveMarker = null;      // marqueur bleu sur la carte complète
-  let gpsLiveCircle = null;      // cercle de précision sur la carte complète
-  let gpsTracking = false;       // true = le suivi continu est actif
-  let gpsBestAccuracy = Infinity;
+  let gpsWatchTimeoutId = null;
+  const GPS_WATCH_DURATION_MS = 12000;
+  const GPS_GOOD_ENOUGH_ACCURACY_M = 15; // arrête la recherche plus tôt si déjà très précis
 
   function geoErrorHint(err) {
-    if (err.code === 1) return 'Autorisation GPS refusée. Dans les paramètres Android de l\'app, activez la permission "Localisation".';
-    if (err.code === 2) return 'GPS indisponible. Vérifiez que la localisation est activée dans les paramètres du téléphone.';
-    if (err.code === 3) return 'Délai GPS dépassé. Restez à l\'extérieur et réessayez.';
-    return 'Localisation indisponible (' + (err.message || 'erreur inconnue') + ').';
+    if (err.code === 1) return 'Autorisation de localisation refusée ou indisponible.';
+    if (err.code === 3) return 'Délai de localisation dépassé. Réessayez à l\'extérieur si possible.';
+    return 'Localisation indisponible (' + err.message + ').';
   }
 
   function stopGpsWatch() {
     if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
-    gpsTracking = false;
-    gpsBestAccuracy = Infinity;
-    removeGpsLiveMarker();
+    if (gpsWatchTimeoutId !== null) { clearTimeout(gpsWatchTimeoutId); gpsWatchTimeoutId = null; }
   }
 
-  function removeGpsLiveMarker() {
-    if (gpsLiveMarker && fullMap) { fullMap.removeLayer(gpsLiveMarker); gpsLiveMarker = null; }
-    if (gpsLiveCircle && fullMap) { fullMap.removeLayer(gpsLiveCircle); gpsLiveCircle = null; }
-  }
-
-  function updateGpsLiveMarker(lat, lon, accuracy) {
-    if (!fullMap) return;
-    const latlng = [lat, lon];
-    if (!gpsLiveMarker) {
-      // Point bleu pulsant (style Google Maps)
-      gpsLiveCircle = L.circle(latlng, {
-        radius: accuracy, color: '#1a73e8', weight: 1,
-        fillColor: '#1a73e8', fillOpacity: 0.12
-      }).addTo(fullMap);
-      gpsLiveMarker = L.circleMarker(latlng, {
-        radius: 9, color: '#ffffff', weight: 3,
-        fillColor: '#1a73e8', fillOpacity: 1
-      }).addTo(fullMap);
-    } else {
-      gpsLiveMarker.setLatLng(latlng);
-      gpsLiveCircle.setLatLng(latlng);
-      gpsLiveCircle.setRadius(accuracy);
-    }
-  }
-
-  // Démarre le suivi GPS continu (appelé au clic sur "Me géolocaliser" ET à l'ouverture de la carte)
-  function startGpsTracking(centerMap) {
+  function refreshPosition() {
     if (!navigator.geolocation) {
-      setPosStatus('La géolocalisation n\'est pas disponible sur cet appareil/application.', 'err');
-      return;
-    }
-    // Si déjà en suivi, on recentre juste la carte
-    if (gpsTracking && gpsLiveMarker) {
-      const ll = gpsLiveMarker.getLatLng();
-      if (centerMap) {
-        map.setView(ll, 18);
-        if (fullMap) fullMap.setView(ll, 18);
-      }
+      setPosStatus('La géolocalisation n\'est pas disponible sur cet appareil/navigateur.', 'err');
       return;
     }
     stopGpsWatch();
-    gpsTracking = true;
-    setPosStatus('Recherche GPS en cours… (précision réseau d\'abord, GPS satellite ensuite)', '');
+    let bestFix = null;
+    setPosStatus('Recherche GPS en cours…', '');
 
     gpsWatchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
-        const isFirstFix = gpsBestAccuracy === Infinity;
-        const improved = accuracy < gpsBestAccuracy;
-        if (improved) gpsBestAccuracy = accuracy;
-
-        // Met à jour le marqueur bleu sur la carte complète
-        updateGpsLiveMarker(latitude, longitude, accuracy);
-
-        // Centre la carte sur le premier fix, ou si précision améliorée significativement
-        if (centerMap && (isFirstFix || improved)) {
+        if (!bestFix || accuracy < bestFix.accuracy) {
+          bestFix = { latitude, longitude, accuracy };
           map.setView([latitude, longitude], 18);
-          if (fullMap) fullMap.setView([latitude, longitude], isFirstFix ? 18 : fullMap.getZoom());
+          setPosStatus('Précision actuelle : ' + Math.round(accuracy) + ' m — recherche d\'une meilleure précision…', '');
         }
+        if (accuracy <= GPS_GOOD_ENOUGH_ACCURACY_M) finishGpsWatch(bestFix);
+      },
+      (err) => { if (!bestFix) setPosStatus(geoErrorHint(err), 'err'); },
+      { enableHighAccuracy: true, timeout: GPS_WATCH_DURATION_MS, maximumAge: 0 }
+    );
 
-        const accLabel = accuracy < 10 ? 'excellente (' + Math.round(accuracy) + ' m)'
-          : accuracy < 30 ? 'bonne (' + Math.round(accuracy) + ' m)'
-          : accuracy < 100 ? 'moyenne (' + Math.round(accuracy) + ' m)'
-          : 'faible (' + Math.round(accuracy) + ' m — réseau, attendez le GPS satellite)';
-        setPosStatus('📍 Position en direct — précision ' + accLabel, accuracy < 30 ? 'ok' : '');
-        centerMap = false; // on ne recentre qu'au premier déclenchement
+    gpsWatchTimeoutId = setTimeout(() => finishGpsWatch(bestFix), GPS_WATCH_DURATION_MS);
+
+    function finishGpsWatch(fix) {
+      stopGpsWatch();
+      if (fix) {
+        setPosStatus('Position trouvée (précision ' + Math.round(fix.accuracy) + ' m). Ouvrez la carte complète pour pointer le regard.', 'ok');
+      } else {
+        setPosStatus('Position introuvable. Vérifiez que la localisation est activée et autorisée pour cette application.', 'err');
+      }
+    }
+  }
+
+  // ----- "Ma position" sur la carte plein écran : suivi GPS continu, comme Google Earth/Maps -----
+  // Contrairement à refreshPosition() (une recherche limitée dans le temps puis arrêt),
+  // ce mode reste actif en continu : le point bleu se déplace et s'affine sans jamais
+  // s'arrêter tout seul, jusqu'à ce qu'on désactive le suivi. C'est ce qui permet
+  // d'obtenir avec le temps une précision bien meilleure que 200 m, le GPS satellite
+  // ayant le temps de converger au lieu d'être coupé après une seule lecture.
+  let myLocationWatchId = null;
+  let myLocationMarker = null;
+  let myLocationHasCentered = false;
+
+  function toggleMyLocationTracking() {
+    if (myLocationWatchId !== null) {
+      stopMyLocationTracking();
+      return;
+    }
+    if (!navigator.geolocation) {
+      setPosStatus('La géolocalisation n\'est pas disponible sur cet appareil/navigateur.', 'err');
+      return;
+    }
+    const btn = document.getElementById('myLocationBtn');
+    if (btn) btn.classList.add('tracking');
+    myLocationHasCentered = false;
+
+    myLocationWatchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        updateMyLocationMarker(latitude, longitude, accuracy);
+        // Comme Google Earth : on centre automatiquement la carte sur la première
+        // position reçue, puis on laisse l'utilisateur naviguer librement ensuite
+        // (on ne force plus le recentrage à chaque mise à jour, pour ne pas gêner
+        // une carte qu'il serait en train de consulter/dessiner ailleurs).
+        if (!myLocationHasCentered && fullMap) {
+          fullMap.setView([latitude, longitude], 19);
+          myLocationHasCentered = true;
+        }
+        setPosStatus('Position en direct — précision actuelle : ' + Math.round(accuracy) + ' m.', accuracy <= 30 ? 'ok' : '');
       },
-      (err) => {
-        gpsTracking = false;
-        setPosStatus(geoErrorHint(err), 'err');
-      },
-      { enableHighAccuracy: true, timeout: 30000, maximumAge: 2000 }
+      (err) => setPosStatus(geoErrorHint(err), 'err'),
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
     );
   }
 
-  function refreshPosition() {
-    startGpsTracking(true);
+  function stopMyLocationTracking() {
+    if (myLocationWatchId !== null) { navigator.geolocation.clearWatch(myLocationWatchId); myLocationWatchId = null; }
+    const btn = document.getElementById('myLocationBtn');
+    if (btn) btn.classList.remove('tracking');
+    if (myLocationMarker) { fullMap.removeLayer(myLocationMarker); myLocationMarker = null; }
+  }
+
+  function updateMyLocationMarker(lat, lon, accuracy) {
+    if (!fullMap) return;
+    if (myLocationMarker) {
+      myLocationMarker.setLatLng([lat, lon]);
+    } else {
+      myLocationMarker = L.marker([lat, lon], {
+        icon: L.divIcon({
+          className: 'my-location-icon',
+          html: '<div class="my-location-pulse"></div><div class="my-location-dot"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        }),
+        interactive: false,
+        zIndexOffset: 1000
+      }).addTo(fullMap);
+    }
+  }
+
+  // ----- Couleur des regards : 5 couleurs au choix, affichées comme pastille sur la carte -----
+  const REGARD_COLORS = ['#c2790f', '#d62828', '#1d4ed8', '#2d6a4f', '#7c3aed'];
+  const DEFAULT_REGARD_COLOR = REGARD_COLORS[0];
+
+  function buildColorPicker(containerId, selectedColor, onSelect) {
+    const el = document.getElementById(containerId);
+    el.innerHTML = '';
+    REGARD_COLORS.forEach(color => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'color-swatch' + (color === selectedColor ? ' selected' : '');
+      btn.style.background = color;
+      btn.dataset.color = color;
+      btn.onclick = () => {
+        el.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+        btn.classList.add('selected');
+        onSelect(color);
+      };
+      el.appendChild(btn);
+    });
   }
 
   // ----- Regards : nouveau point (un tap sur la carte complète) -----
+  let pendingNewRegardColor = DEFAULT_REGARD_COLOR;
+
   function openRegardModalForNewPoint(lat, lon) {
     pendingNewRegardLatLng = { lat, lon };
-    _pendingRegardColor = DEFAULT_REGARD_COLOR;
+    pendingNewRegardColor = DEFAULT_REGARD_COLOR;
     document.getElementById('modalRegardName').value = nextRegardSuggestion();
     document.getElementById('modalRegardEtat').value = '';
-    document.getElementById('modalRegardColorPicker').innerHTML = buildColorPickerHTML(DEFAULT_REGARD_COLOR);
+    buildColorPicker('modalRegardColorPicker', pendingNewRegardColor, (c) => { pendingNewRegardColor = c; });
     document.getElementById('regardModal').classList.add('open');
     setTimeout(() => document.getElementById('modalRegardName').focus(), 100);
   }
@@ -916,7 +932,7 @@
       id: 'R' + Date.now(),
       name,
       etat: document.getElementById('modalRegardEtat').value.trim(),
-      color: _pendingRegardColor,
+      color: pendingNewRegardColor,
       lat: pendingNewRegardLatLng.lat,
       lon: pendingNewRegardLatLng.lon,
       timestamp: new Date().toISOString()
@@ -927,14 +943,16 @@
   }
 
   // ----- Regards : modification / suppression (appui long sur la carte complète) -----
+  let editingRegardColor = DEFAULT_REGARD_COLOR;
+
   function openEditRegardModal(id) {
     const r = regards.find(x => x.id === id);
     if (!r) return;
     editingRegardId = id;
-    _pendingEditRegardColor = r.color || DEFAULT_REGARD_COLOR;
+    editingRegardColor = r.color || DEFAULT_REGARD_COLOR;
     document.getElementById('editRegardName').value = r.name;
     document.getElementById('editRegardEtat').value = r.etat || '';
-    document.getElementById('editRegardColorPicker').innerHTML = buildColorPickerHTML(_pendingEditRegardColor);
+    buildColorPicker('editRegardColorPicker', editingRegardColor, (c) => { editingRegardColor = c; });
     document.getElementById('editRegardModal').classList.add('open');
   }
 
@@ -950,7 +968,7 @@
     if (!name) { alert('Indiquez un n° de regard.'); return; }
     r.name = name;
     r.etat = document.getElementById('editRegardEtat').value.trim();
-    r.color = _pendingEditRegardColor;
+    r.color = editingRegardColor;
     await saveData();
     closeEditRegardModal();
     renderAll();
@@ -1179,10 +1197,9 @@
     document.getElementById('regardEmptyHint').style.display = regards.length ? 'none' : 'block';
     ul.innerHTML = '';
     regards.forEach(r => {
-      const colorHex = regardColorHex(r.color);
       const li = document.createElement('li');
       li.innerHTML = `<div class="item-info">
-          <b><span class="dot" style="background:${colorHex}"></span>${escapeHTML(r.name)}</b>
+          <b><span class="dot" style="background:${r.color || DEFAULT_REGARD_COLOR}"></span>${escapeHTML(r.name)}</b>
           <span class="meta">${escapeHTML(r.etat || 'état non renseigné')} \u00b7 ${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}</span>
         </div>
         <button class="btn-danger-text" onclick="quickDeleteRegard('${r.id}')" aria-label="Supprimer">\u2715</button>`;
@@ -1233,16 +1250,11 @@
     lineLayerGroup.clearLayers();
     const bounds = [];
     regards.forEach(r => {
-      const fillColor = regardColorHex(r.color);
       L.circleMarker([r.lat, r.lon], {
-        radius: 7, color: '#ffffff', weight: 2, fillColor: fillColor, fillOpacity: 0.95
+        radius: 7, color: '#ffffff', weight: 2, fillColor: r.color || DEFAULT_REGARD_COLOR, fillOpacity: 0.95
       }).addTo(markerLayerGroup);
       L.marker([r.lat, r.lon], {
-        icon: L.divIcon({
-          className: 'map-label-regard',
-          html: '<span style="border-left:3px solid ' + fillColor + ';padding-left:4px">' + escapeHTML(r.name) + '</span>',
-          iconSize: null, iconAnchor: [-10, 8]
-        }),
+        icon: L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }),
         interactive: false
       }).addTo(markerLayerGroup);
       bounds.push([r.lat, r.lon]);
