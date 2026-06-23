@@ -144,6 +144,48 @@
     padding: 8px 14px; font-weight: 700; font-size: 14px;
   }
 
+  #fullMapBottomBar {
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 2001;
+    padding: 12px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    background: rgba(11, 31, 23, 0.88); backdrop-filter: blur(4px);
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .draw-mode-btn {
+    width: 100%; border: none; border-radius: 10px; padding: 13px 14px;
+    font-weight: 700; font-size: 15px; background: var(--manhole); color: white;
+  }
+  .draw-mode-btn.active { background: #c0392b; }
+  .draw-mode-hint { color: #cfe8da; font-size: 12.5px; text-align: center; min-height: 16px; }
+
+  /* Étiquettes texte sur les points/lignes de la carte */
+  .map-label-regard {
+    background: rgba(11,31,23,0.85); color: white; font-weight: 700; font-size: 12px;
+    padding: 1px 6px; border-radius: 5px; white-space: nowrap; border: none !important;
+    box-shadow: none !important;
+  }
+  .map-label-regard::before { display: none; }
+  .map-label-cond {
+    background: rgba(45,106,79,0.92); color: white; font-weight: 700; font-size: 11.5px;
+    padding: 1px 6px; border-radius: 5px; white-space: nowrap; border: none !important;
+    box-shadow: none !important;
+  }
+  .map-label-cond::before { display: none; }
+
+  /* Fiches de saisie rapide (modals) */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; z-index: 3000;
+    background: rgba(0,0,0,0.5); align-items: flex-end; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-sheet {
+    background: var(--card-bg, #ffffff); width: 100%; max-width: 480px;
+    border-radius: 16px 16px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.3);
+  }
+  .modal-sheet h3 { margin: 0 0 12px 0; color: var(--manhole-deep); }
+  .modal-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .modal-actions > button { flex: 1; margin-top: 0; }
+
   .position-box {
     display: flex;
     flex-wrap: wrap;
@@ -217,87 +259,38 @@
 <main>
 
   <div class="card locate">
-    <h2>Carte &amp; positionnement <span class="badge-count" id="placedBadge" style="display:none; background:var(--manhole);">point placé</span></h2>
+    <h2>Carte &amp; positionnement</h2>
     <p class="hint">
-      Touchez l'image satellite à l'endroit exact du regard, ou faites glisser le repère orange pour l'ajuster précisément. Le bouton « Me géolocaliser » ne fait que vous rapprocher du bon endroit ; il ne remplace pas un pointage manuel. L'icône en haut à droite de la carte permet de changer de fond de carte (Google, Esri ou Plan/rues) si l'imagerie haute résolution manque ou semble dépassée à cet endroit.
+      Ouvrez la carte complète pour ajouter, déplacer ou modifier vos regards et collecteurs directement au doigt. Cet aperçu réduit ne sert qu'à visualiser et géolocaliser.
     </p>
 
     <div id="map"></div>
     <div class="legend">
-      <span><span class="pin-sample"></span>Point à placer / ajuster</span>
       <span><span class="dot"></span>&nbsp;Regard enregistré</span>
-      <span><span class="dash"></span>&nbsp;Conduite</span>
+      <span><span class="dash"></span>&nbsp;Collecteur</span>
     </div>
 
-    <button class="btn-fullmap" onclick="openFullMap()">🗺️ Voir la carte complète (tous les points enregistrés)</button>
-
-    <div class="position-box">
-      <div>Latitude<span class="val" id="posLat">—</span></div>
-      <div>Longitude<span class="val" id="posLon">—</span></div>
-      <div>Précision GPS initiale<span class="val" id="posAcc">—</span></div>
-    </div>
+    <button class="btn-fullmap" onclick="openFullMap()">🗺️ Ouvrir la carte complète (ajouter / modifier / dessiner)</button>
 
     <div class="row-two">
-      <button class="btn-outline" onclick="refreshPosition()">Me géolocaliser (approximatif)</button>
-      <button class="btn-outline-danger" onclick="clearDraftPoint()">Effacer le point</button>
+      <button class="btn-outline" onclick="refreshPosition()">Me géolocaliser (centrer la carte)</button>
+      <button class="btn-outline" onclick="document.getElementById('importKmlInput').click()">📂 Importer un fichier KML</button>
     </div>
+    <input type="file" id="importKmlInput" accept=".kml" style="display:none" onchange="handleImportKmlFile(event)">
     <div class="status-msg" id="posStatus"></div>
+    <div class="status-msg" id="importStatus"></div>
   </div>
 
-  <div class="card regards">
-    <h2><span class="dot"></span>Ajouter un Regard <span class="badge-count" id="regardCount">0</span></h2>
-    <label>Nom / numéro du regard *</label>
-    <input id="regardName" placeholder="ex: R12, Regard rue Hassan II" />
-    <div class="row-two">
-      <div>
-        <label>Type</label>
-        <input id="regardType" placeholder="Regard de visite" />
-      </div>
-      <div>
-        <label>Profondeur (m)</label>
-        <input id="regardDepth" type="number" step="0.1" inputmode="decimal" placeholder="1.5" />
-      </div>
-    </div>
-    <label>Note / observation</label>
-    <textarea id="regardNote" placeholder="état du tampon, encombrement, dépôts..."></textarea>
-    <button class="btn-manhole" onclick="addRegard()">Enregistrer ce regard au point placé sur la carte</button>
-    <div class="status-msg" id="regardStatus"></div>
-
+  <div class="card">
+    <h2><span class="dot"></span>Regards <span class="badge-count" id="regardCount">0</span></h2>
     <ul class="item-list" id="regardList"></ul>
-    <div class="empty-hint" id="regardEmptyHint">Aucun regard pour l'instant. Placez un point sur la carte ci-dessus puis enregistrez-le ici.</div>
+    <div class="empty-hint" id="regardEmptyHint">Aucun regard pour l'instant. Ouvrez la carte complète et touchez un point pour en créer un.</div>
   </div>
 
-  <div class="card conduites">
-    <h2><span class="dash"></span>Ajouter une Conduite / Collecteur <span class="badge-count" id="conduiteCount">0</span></h2>
-    <div class="row-two">
-      <div>
-        <label>Regard de départ *</label>
-        <select id="condFrom"></select>
-      </div>
-      <div>
-        <label>Regard d'arrivée *</label>
-        <select id="condTo"></select>
-      </div>
-    </div>
-    <div class="row-two">
-      <div>
-        <label>Type</label>
-        <input id="condType" placeholder="Collecteur, branchement..." />
-      </div>
-      <div>
-        <label>Diamètre (mm)</label>
-        <input id="condDiameter" type="number" inputmode="numeric" placeholder="300" />
-      </div>
-    </div>
-    <label>Matériau</label>
-    <input id="condMaterial" placeholder="PVC, béton, fonte..." />
-    <label>Note / observation</label>
-    <textarea id="condNote" placeholder="état, fissure, sens d'écoulement..."></textarea>
-    <button class="btn-primary" onclick="addConduite()">Enregistrer cette conduite</button>
-    <div class="status-msg" id="condStatus"></div>
-
+  <div class="card">
+    <h2><span class="dash"></span>Collecteurs <span class="badge-count" id="conduiteCount">0</span></h2>
     <ul class="item-list" id="condList"></ul>
-    <div class="empty-hint" id="condEmptyHint">Aucune conduite pour l'instant. Ajoutez au moins deux regards, puis reliez-les ici.</div>
+    <div class="empty-hint" id="condEmptyHint">Aucun collecteur pour l'instant. Ouvrez la carte complète, activez le mode "Dessiner un collecteur", puis touchez deux regards.</div>
   </div>
 
   <div class="card">
@@ -333,6 +326,89 @@
     <button id="fullMapCloseBtn" onclick="closeFullMap()">Fermer ✕</button>
   </div>
   <div id="fullMap"></div>
+
+  <div id="fullMapBottomBar">
+    <button id="drawModeBtn" class="draw-mode-btn" onclick="toggleDrawMode()">✏️ Dessiner un collecteur</button>
+    <div id="drawModeHint" class="draw-mode-hint"></div>
+  </div>
+</div>
+
+<!-- Saisie rapide : nouveau regard (un seul tap sur la carte) -->
+<div class="modal-backdrop" id="regardModal">
+  <div class="modal-sheet">
+    <h3>Nouveau regard</h3>
+    <label>N° de regard *</label>
+    <input id="modalRegardName" placeholder="ex: R1" autocomplete="off">
+    <label>État du regard</label>
+    <input id="modalRegardEtat" placeholder="ex: bon, fissuré, cassé...">
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeRegardModal()">Annuler</button>
+      <button class="btn-manhole" onclick="confirmAddRegard()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Saisie rapide : nouveau collecteur (après avoir touché R1 puis R2) -->
+<div class="modal-backdrop" id="collecteurModal">
+  <div class="modal-sheet">
+    <h3>Nouveau collecteur</h3>
+    <p class="hint" id="collecteurModalSummary"></p>
+    <label>N° de collecteur *</label>
+    <input id="modalCondName" placeholder="ex: C1" autocomplete="off">
+    <label>Diamètre</label>
+    <select id="modalCondDiameter">
+      <option value="200">200 mm</option>
+      <option value="300" selected>300 mm</option>
+      <option value="400">400 mm</option>
+      <option value="500">500 mm</option>
+      <option value="600">600 mm</option>
+      <option value="800">800 mm</option>
+      <option value="1000">1000 mm</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeCollecteurModal()">Annuler</button>
+      <button class="btn-primary" onclick="confirmAddCollecteur()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modifier / supprimer un regard existant (appui long) -->
+<div class="modal-backdrop" id="editRegardModal">
+  <div class="modal-sheet">
+    <h3>Modifier le regard</h3>
+    <label>N° de regard *</label>
+    <input id="editRegardName" placeholder="ex: R1" autocomplete="off">
+    <label>État du regard</label>
+    <input id="editRegardEtat" placeholder="ex: bon, fissuré, cassé...">
+    <div class="modal-actions">
+      <button class="btn-outline-danger" onclick="confirmDeleteRegardFromEdit()">Supprimer</button>
+      <button class="btn-manhole" onclick="confirmEditRegard()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modifier / supprimer un collecteur existant (appui long) -->
+<div class="modal-backdrop" id="editCollecteurModal">
+  <div class="modal-sheet">
+    <h3>Modifier le collecteur</h3>
+    <p class="hint" id="editCollecteurSummary"></p>
+    <label>N° de collecteur *</label>
+    <input id="editCondName" placeholder="ex: C1" autocomplete="off">
+    <label>Diamètre</label>
+    <select id="editCondDiameter">
+      <option value="200">200 mm</option>
+      <option value="300">300 mm</option>
+      <option value="400">400 mm</option>
+      <option value="500">500 mm</option>
+      <option value="600">600 mm</option>
+      <option value="800">800 mm</option>
+      <option value="1000">1000 mm</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn-outline-danger" onclick="confirmDeleteCollecteurFromEdit()">Supprimer</button>
+      <button class="btn-primary" onclick="confirmEditCollecteur()">Enregistrer</button>
+    </div>
+  </div>
 </div>
 
 <footer>Les données sont sauvegardées automatiquement sur cet appareil (mémoire locale du navigateur/de l'application). Si vous changez d'appareil ou désinstallez l'application, exportez le KML ou synchronisez avec Google Drive avant pour ne rien perdre.</footer>
@@ -343,8 +419,6 @@
   let regards = [];
   let conduites = [];
   let map, markerLayerGroup, lineLayerGroup;
-  let draftMarker = null;       // repère orange déplaçable, position du prochain regard
-  let lastGpsAccuracy = null;   // dernière précision GPS connue (m), null si placement 100% manuel
   const STORAGE_KEY = 'assainissement-survey-data';
   const hasStorage = typeof window.storage !== 'undefined';
 
@@ -421,33 +495,101 @@
   function initMap() {
     map = L.map('map', { zoomControl: true, maxZoom: 21 }).setView([31.7, -7.0], 6);
     addBaseLayers(map);
-
     markerLayerGroup = L.layerGroup().addTo(map);
     lineLayerGroup = L.layerGroup().addTo(map);
-
-    // Toucher la carte = placer ou déplacer le repère du futur regard
-    map.on('click', (e) => placeDraftPoint(e.latlng.lat, e.latlng.lng, 'manuel'));
   }
 
-  // ----- Carte plein écran (toutes les données, lecture seule) -----
+  // ----- Carte plein écran : c'est ici que se fait tout le travail de terrain -----
+  // - Un tap simple sur du vide  -> crée un nouveau regard à cet endroit
+  // - Un tap simple sur un regard, en mode "dessin de collecteur" -> sélectionne R1 puis R2
+  // - Un appui long sur un regard ou un collecteur -> ouvre sa fiche de modification/suppression
   let fullMap = null;
   let fullMapMarkerLayer = null;
   let fullMapLineLayer = null;
+  let drawMode = false;          // true = on est en train de choisir R1 puis R2 pour un collecteur
+  let drawFromRegardId = null;   // id du regard "départ" déjà sélectionné en mode dessin
+  let pendingNewRegardLatLng = null; // coordonnées en attente de confirmation dans la fiche "Nouveau regard"
+  let editingRegardId = null;
+  let editingCollecteurId = null;
+  const LONG_PRESS_MS = 480;
 
   function openFullMap() {
     document.getElementById('fullMapOverlay').classList.add('open');
     if (!fullMap) {
       fullMap = L.map('fullMap', { zoomControl: true, maxZoom: 21 }).setView([31.7, -7.0], 6);
       addBaseLayers(fullMap);
-      fullMapMarkerLayer = L.layerGroup().addTo(fullMap);
       fullMapLineLayer = L.layerGroup().addTo(fullMap);
+      fullMapMarkerLayer = L.layerGroup().addTo(fullMap);
+
+      // Tap simple sur le fond de carte (pas sur un marqueur) = nouveau regard à cet endroit,
+      // sauf si on est en plein dessin de collecteur (on doit alors taper sur des regards existants).
+      fullMap.on('click', (e) => {
+        if (drawMode) {
+          setDrawHint('Touchez un regard existant pour ' + (drawFromRegardId ? 'le point d\'arrivée.' : 'le point de départ.'));
+          return;
+        }
+        openRegardModalForNewPoint(e.latlng.lat, e.latlng.lng);
+      });
     }
-    // Leaflet a besoin d'un recalcul de taille après être passé de display:none à visible.
     setTimeout(() => { fullMap.invalidateSize(); renderFullMap(); }, 50);
   }
 
   function closeFullMap() {
     document.getElementById('fullMapOverlay').classList.remove('open');
+    exitDrawMode();
+  }
+
+  function toggleDrawMode() {
+    if (drawMode) { exitDrawMode(); return; }
+    drawMode = true;
+    drawFromRegardId = null;
+    document.getElementById('drawModeBtn').classList.add('active');
+    document.getElementById('drawModeBtn').textContent = '✕ Annuler le dessin';
+    setDrawHint('Touchez le regard de DÉPART du collecteur (sens d\'écoulement).');
+  }
+
+  function exitDrawMode() {
+    drawMode = false;
+    drawFromRegardId = null;
+    const btn = document.getElementById('drawModeBtn');
+    if (btn) { btn.classList.remove('active'); btn.textContent = '✏️ Dessiner un collecteur'; }
+    setDrawHint('');
+    renderFullMap(); // retire le surlignage du regard de départ déjà choisi
+  }
+
+  function setDrawHint(msg) {
+    const el = document.getElementById('drawModeHint');
+    if (el) el.textContent = msg;
+  }
+
+  // Appelé quand on touche un regard pendant le dessin d'un collecteur.
+  function handleRegardTapInDrawMode(regardId) {
+    if (!drawFromRegardId) {
+      drawFromRegardId = regardId;
+      const r = regards.find(x => x.id === regardId);
+      setDrawHint('Départ : ' + (r ? r.name : '?') + '. Touchez maintenant le regard d\'ARRIVÉE.');
+      renderFullMap();
+      return;
+    }
+    if (drawFromRegardId === regardId) {
+      setDrawHint('Choisissez un regard d\'arrivée différent du départ.');
+      return;
+    }
+    openCollecteurModal(drawFromRegardId, regardId);
+  }
+
+  // ----- Pression longue générique sur un élément Leaflet (marqueur ou ligne) -----
+  function bindLongPress(layer, onLongPress, onShortTap) {
+    let timer = null;
+    let firedLong = false;
+    const start = () => {
+      firedLong = false;
+      timer = setTimeout(() => { firedLong = true; onLongPress(); }, LONG_PRESS_MS);
+    };
+    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    layer.on('mousedown touchstart', start);
+    layer.on('mouseup touchend mouseout', cancel);
+    layer.on('click', () => { if (!firedLong && onShortTap) onShortTap(); });
   }
 
   function renderFullMap() {
@@ -457,10 +599,24 @@
     const bounds = [];
 
     regards.forEach(r => {
+      const isDrawFrom = drawMode && drawFromRegardId === r.id;
       const marker = L.circleMarker([r.lat, r.lon], {
-        radius: 7, color: '#c2790f', fillColor: '#c2790f', fillOpacity: 0.9, weight: 2
+        radius: isDrawFrom ? 10 : 8,
+        color: isDrawFrom ? '#c0392b' : '#ffffff',
+        weight: isDrawFrom ? 3 : 2,
+        fillColor: '#c2790f',
+        fillOpacity: 0.95
       }).addTo(fullMapMarkerLayer);
-      marker.bindPopup(`<b>${escapeHTML(r.name)}</b><br>${escapeHTML(r.type || '')}${r.depth ? ' \u00b7 ' + r.depth + 'm' : ''}<br>${escapeHTML(r.note || '')}`);
+
+      const label = L.marker([r.lat, r.lon], {
+        icon: L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }),
+        interactive: false
+      }).addTo(fullMapMarkerLayer);
+
+      bindLongPress(marker, () => openEditRegardModal(r.id), () => {
+        if (drawMode) handleRegardTapInDrawMode(r.id);
+      });
+
       bounds.push([r.lat, r.lon]);
     });
 
@@ -468,16 +624,38 @@
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
       if (!rFrom || !rTo) return;
-      const line = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], { color: '#2d6a4f', weight: 4 }).addTo(fullMapLineLayer);
-      line.bindPopup(`<b>${escapeHTML(c.type)}</b>${c.diameter ? ' \u00d8' + c.diameter + 'mm' : ''}<br>${escapeHTML(c.material || '')}<br>${escapeHTML(c.note || '')}`);
+
+      const line = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], {
+        color: '#2d6a4f', weight: 4
+      }).addTo(fullMapLineLayer);
+      bindLongPress(line, () => openEditCollecteurModal(c.id));
+
+      // Triangle indiquant le sens d'écoulement (départ -> arrivée), au milieu du tracé.
+      const midLat = (rFrom.lat + rTo.lat) / 2;
+      const midLon = (rFrom.lon + rTo.lon) / 2;
+      const angleDeg = Math.atan2(rTo.lon - rFrom.lon, rTo.lat - rFrom.lat) * 180 / Math.PI;
+      const arrow = L.marker([midLat, midLon], {
+        icon: L.divIcon({
+          className: 'flow-arrow-icon',
+          html: '<div style="transform: rotate(' + angleDeg + 'deg); width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid #2d6a4f;"></div>',
+          iconSize: [14, 12],
+          iconAnchor: [7, 6]
+        }),
+        interactive: false
+      }).addTo(fullMapLineLayer);
+
+      const condLabel = L.marker([midLat, midLon], {
+        icon: L.divIcon({ className: 'map-label-cond', html: escapeHTML(c.name), iconSize: null, iconAnchor: [-12, -6] }),
+        interactive: false
+      }).addTo(fullMapLineLayer);
     });
 
-    if (bounds.length) fullMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 19 });
+    if (bounds.length && !pendingNewRegardLatLng) fullMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 19 });
 
     const countEl = document.getElementById('fullMapCount');
     if (countEl) {
       countEl.textContent = regards.length + ' regard' + (regards.length === 1 ? '' : 's') +
-        ' · ' + conduites.length + ' conduite' + (conduites.length === 1 ? '' : 's');
+        ' · ' + conduites.length + ' collecteur' + (conduites.length === 1 ? '' : 's');
     }
   }
 
@@ -523,61 +701,14 @@
     conduites = [];
   }
 
-  // ----- Repère orange (point en cours de placement) -----
-  function placeDraftPoint(lat, lon, source) {
-    if (draftMarker) {
-      draftMarker.setLatLng([lat, lon]);
-    } else {
-      draftMarker = L.marker([lat, lon], {
-        draggable: true,
-        autoPan: true,
-        icon: L.divIcon({
-          className: 'draft-pin-icon',
-          html: '<div class="pin-shape"></div>',
-          iconSize: [26, 26],
-          iconAnchor: [13, 26]
-        })
-      }).addTo(map);
-      draftMarker.on('drag', (e) => updatePositionDisplay(e.target.getLatLng()));
-      draftMarker.on('dragend', (e) => {
-        updatePositionDisplay(e.target.getLatLng());
-        setPosStatus('Point ajusté manuellement. Vous pouvez enregistrer le regard.', 'ok');
-      });
-    }
-    updatePositionDisplay({ lat, lng: lon });
-    document.getElementById('placedBadge').style.display = 'inline-block';
-    if (source === 'manuel') {
-      lastGpsAccuracy = null;
-      document.getElementById('posAcc').textContent = '— (placement manuel)';
-      setPosStatus('Point placé manuellement. Faites-le glisser pour affiner si besoin.', 'ok');
-    }
-  }
-
-  function updatePositionDisplay(latlng) {
-    document.getElementById('posLat').textContent = latlng.lat.toFixed(6);
-    document.getElementById('posLon').textContent = latlng.lng.toFixed(6);
-  }
-
-  function clearDraftPoint() {
-    if (draftMarker) {
-      map.removeLayer(draftMarker);
-      draftMarker = null;
-    }
-    lastGpsAccuracy = null;
-    document.getElementById('posLat').textContent = '—';
-    document.getElementById('posLon').textContent = '—';
-    document.getElementById('posAcc').textContent = '—';
-    document.getElementById('placedBadge').style.display = 'none';
-    setPosStatus('', '');
-  }
-
   function setPosStatus(msg, kind) {
     const el = document.getElementById('posStatus');
+    if (!el) return;
     el.textContent = msg;
     el.className = 'status-msg' + (kind === 'ok' ? ' status-ok' : kind === 'err' ? ' status-err' : '');
   }
 
-  // ----- Géolocalisation approximative (point de départ, à affiner ensuite) -----
+  // ----- Géolocalisation : centre simplement la carte sur la position actuelle -----
   // getCurrentPosition() avec une seule lecture renvoie souvent la position du
   // réseau mobile (précision de plusieurs centaines de mètres) avant que le GPS
   // satellite n'ait eu le temps de s'affiner. On utilise donc watchPosition()
@@ -588,9 +719,9 @@
   const GPS_GOOD_ENOUGH_ACCURACY_M = 15; // arrête la recherche plus tôt si déjà très précis
 
   function geoErrorHint(err) {
-    if (err.code === 1) return 'Autorisation de localisation refusée ou indisponible. Touchez directement la carte pour placer le point à la main.';
-    if (err.code === 3) return 'Délai de localisation dépassé. Touchez directement la carte pour placer le point à la main.';
-    return 'Localisation indisponible (' + err.message + '). Touchez directement la carte pour placer le point à la main.';
+    if (err.code === 1) return 'Autorisation de localisation refusée ou indisponible.';
+    if (err.code === 3) return 'Délai de localisation dépassé. Réessayez à l\'extérieur si possible.';
+    return 'Localisation indisponible (' + err.message + ').';
   }
 
   function stopGpsWatch() {
@@ -600,34 +731,24 @@
 
   function refreshPosition() {
     if (!navigator.geolocation) {
-      setPosStatus('La géolocalisation n\'est pas disponible sur cet appareil/navigateur. Touchez la carte pour placer le point manuellement.', 'err');
+      setPosStatus('La géolocalisation n\'est pas disponible sur cet appareil/navigateur.', 'err');
       return;
     }
-    stopGpsWatch(); // au cas où une recherche précédente tournerait encore
-
-    let bestFix = null; // { latitude, longitude, accuracy }
-    setPosStatus('Recherche GPS en cours (jusqu\'à ' + Math.round(GPS_WATCH_DURATION_MS / 1000) + ' s pour affiner la précision)…', '');
+    stopGpsWatch();
+    let bestFix = null;
+    setPosStatus('Recherche GPS en cours…', '');
 
     gpsWatchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
         if (!bestFix || accuracy < bestFix.accuracy) {
           bestFix = { latitude, longitude, accuracy };
-          lastGpsAccuracy = accuracy;
-          map.setView([latitude, longitude], 19);
-          placeDraftPoint(latitude, longitude, 'gps');
-          document.getElementById('posAcc').textContent = Math.round(accuracy) + ' m';
-          setPosStatus('Précision actuelle : ' + Math.round(accuracy) + ' m — recherche d\'une meilleure précision en cours…', '');
+          map.setView([latitude, longitude], 18);
+          setPosStatus('Précision actuelle : ' + Math.round(accuracy) + ' m — recherche d\'une meilleure précision…', '');
         }
-        if (accuracy <= GPS_GOOD_ENOUGH_ACCURACY_M) {
-          finishGpsWatch(bestFix);
-        }
+        if (accuracy <= GPS_GOOD_ENOUGH_ACCURACY_M) finishGpsWatch(bestFix);
       },
-      (err) => {
-        // Une erreur ponctuelle pendant le watch n'arrête pas forcément la recherche ;
-        // on ne l'affiche que si on n'a encore aucune position du tout.
-        if (!bestFix) setPosStatus(geoErrorHint(err), 'err');
-      },
+      (err) => { if (!bestFix) setPosStatus(geoErrorHint(err), 'err'); },
       { enableHighAccuracy: true, timeout: GPS_WATCH_DURATION_MS, maximumAge: 0 }
     );
 
@@ -636,102 +757,289 @@
     function finishGpsWatch(fix) {
       stopGpsWatch();
       if (fix) {
-        setPosStatus('Position trouvée (précision ' + Math.round(fix.accuracy) + ' m). Touchez ou glissez le repère sur l\'image satellite pour pointer l\'emplacement exact du regard.', 'ok');
+        setPosStatus('Position trouvée (précision ' + Math.round(fix.accuracy) + ' m). Ouvrez la carte complète pour pointer le regard.', 'ok');
       } else {
-        setPosStatus('Position introuvable. Vérifiez que la localisation est activée (GPS) et autorisée pour cette application, puis réessayez, ou touchez directement la carte.', 'err');
+        setPosStatus('Position introuvable. Vérifiez que la localisation est activée et autorisée pour cette application.', 'err');
       }
     }
   }
 
-  // ----- Regards -----
-  async function addRegard() {
-    const statusEl = document.getElementById('regardStatus');
-    const name = document.getElementById('regardName').value.trim();
-    if (!name) {
-      statusEl.textContent = 'Donnez un nom ou numéro à ce regard.';
-      statusEl.className = 'status-msg status-err';
-      return;
-    }
-    if (!draftMarker) {
-      statusEl.textContent = 'Touchez la carte pour indiquer l\'emplacement de ce regard avant d\'enregistrer.';
-      statusEl.className = 'status-msg status-err';
-      return;
-    }
-    const latlng = draftMarker.getLatLng();
+  // ----- Regards : nouveau point (un tap sur la carte complète) -----
+  function openRegardModalForNewPoint(lat, lon) {
+    pendingNewRegardLatLng = { lat, lon };
+    document.getElementById('modalRegardName').value = nextRegardSuggestion();
+    document.getElementById('modalRegardEtat').value = '';
+    document.getElementById('regardModal').classList.add('open');
+    setTimeout(() => document.getElementById('modalRegardName').focus(), 100);
+  }
+
+  function nextRegardSuggestion() {
+    return 'R' + (regards.length + 1);
+  }
+
+  function closeRegardModal() {
+    document.getElementById('regardModal').classList.remove('open');
+    pendingNewRegardLatLng = null;
+  }
+
+  async function confirmAddRegard() {
+    const name = document.getElementById('modalRegardName').value.trim();
+    if (!name) { alert('Indiquez un n° de regard.'); return; }
+    if (!pendingNewRegardLatLng) { closeRegardModal(); return; }
 
     regards.push({
       id: 'R' + Date.now(),
       name,
-      type: document.getElementById('regardType').value.trim() || 'Regard de visite',
-      depth: document.getElementById('regardDepth').value,
-      note: document.getElementById('regardNote').value.trim(),
-      lat: latlng.lat,
-      lon: latlng.lng,
-      accuracy: lastGpsAccuracy,
+      etat: document.getElementById('modalRegardEtat').value.trim(),
+      lat: pendingNewRegardLatLng.lat,
+      lon: pendingNewRegardLatLng.lon,
       timestamp: new Date().toISOString()
     });
     await saveData();
-
-    ['regardName', 'regardType', 'regardDepth', 'regardNote'].forEach(id => document.getElementById(id).value = '');
-    statusEl.textContent = 'Regard "' + name + '" enregistré.';
-    statusEl.className = 'status-msg status-ok';
-
-    clearDraftPoint();
+    closeRegardModal();
     renderAll();
   }
 
-  async function deleteRegard(id) {
+  // ----- Regards : modification / suppression (appui long sur la carte complète) -----
+  function openEditRegardModal(id) {
+    const r = regards.find(x => x.id === id);
+    if (!r) return;
+    editingRegardId = id;
+    document.getElementById('editRegardName').value = r.name;
+    document.getElementById('editRegardEtat').value = r.etat || '';
+    document.getElementById('editRegardModal').classList.add('open');
+  }
+
+  function closeEditRegardModal() {
+    document.getElementById('editRegardModal').classList.remove('open');
+    editingRegardId = null;
+  }
+
+  async function confirmEditRegard() {
+    const r = regards.find(x => x.id === editingRegardId);
+    if (!r) { closeEditRegardModal(); return; }
+    const name = document.getElementById('editRegardName').value.trim();
+    if (!name) { alert('Indiquez un n° de regard.'); return; }
+    r.name = name;
+    r.etat = document.getElementById('editRegardEtat').value.trim();
+    await saveData();
+    closeEditRegardModal();
+    renderAll();
+  }
+
+  async function confirmDeleteRegardFromEdit() {
+    const id = editingRegardId;
+    if (!id) return;
     const usedIn = conduites.filter(c => c.from === id || c.to === id);
     let msg = 'Supprimer ce regard ?';
-    if (usedIn.length > 0) msg += ' ' + usedIn.length + ' conduite(s) liée(s) seront aussi supprimées.';
+    if (usedIn.length > 0) msg += ' ' + usedIn.length + ' collecteur(s) lié(s) seront aussi supprimés.';
     if (!confirm(msg)) return;
     regards = regards.filter(r => r.id !== id);
     conduites = conduites.filter(c => c.from !== id && c.to !== id);
     await saveData();
+    closeEditRegardModal();
     renderAll();
   }
 
-  // ----- Conduites -----
-  async function addConduite() {
-    const statusEl = document.getElementById('condStatus');
-    const from = document.getElementById('condFrom').value;
-    const to = document.getElementById('condTo').value;
-    if (!from || !to || from === to) {
-      statusEl.textContent = 'Choisissez deux regards différents.';
-      statusEl.className = 'status-msg status-err';
-      return;
-    }
+  // ----- Collecteurs : nouveau (après sélection de R1 puis R2 en mode dessin) -----
+  function openCollecteurModal(fromId, toId) {
+    const rFrom = regards.find(r => r.id === fromId);
+    const rTo = regards.find(r => r.id === toId);
+    pendingCollecteurFromTo = { from: fromId, to: toId };
+    document.getElementById('collecteurModalSummary').textContent =
+      'Sens d\'écoulement : ' + (rFrom ? rFrom.name : '?') + ' → ' + (rTo ? rTo.name : '?');
+    document.getElementById('modalCondName').value = nextCollecteurSuggestion();
+    document.getElementById('modalCondDiameter').value = '300';
+    document.getElementById('collecteurModal').classList.add('open');
+    setTimeout(() => document.getElementById('modalCondName').focus(), 100);
+  }
+
+  function nextCollecteurSuggestion() {
+    return 'C' + (conduites.length + 1);
+  }
+
+  let pendingCollecteurFromTo = null;
+
+  function closeCollecteurModal() {
+    document.getElementById('collecteurModal').classList.remove('open');
+    pendingCollecteurFromTo = null;
+    exitDrawMode();
+  }
+
+  async function confirmAddCollecteur() {
+    const name = document.getElementById('modalCondName').value.trim();
+    if (!name) { alert('Indiquez un n° de collecteur.'); return; }
+    if (!pendingCollecteurFromTo) { closeCollecteurModal(); return; }
+
     conduites.push({
       id: 'C' + Date.now(),
-      from, to,
-      type: document.getElementById('condType').value.trim() || 'Conduite',
-      diameter: document.getElementById('condDiameter').value,
-      material: document.getElementById('condMaterial').value.trim(),
-      note: document.getElementById('condNote').value.trim(),
+      name,
+      from: pendingCollecteurFromTo.from,
+      to: pendingCollecteurFromTo.to,
+      diameter: document.getElementById('modalCondDiameter').value,
       timestamp: new Date().toISOString()
     });
     await saveData();
+    closeCollecteurModal();
     renderAll();
-
-    ['condType', 'condDiameter', 'condMaterial', 'condNote'].forEach(id => document.getElementById(id).value = '');
-    statusEl.textContent = 'Conduite enregistrée.';
-    statusEl.className = 'status-msg status-ok';
   }
 
-  async function deleteConduite(id) {
-    if (!confirm('Supprimer cette conduite ?')) return;
+  // ----- Collecteurs : modification / suppression (appui long sur la carte complète) -----
+  function openEditCollecteurModal(id) {
+    const c = conduites.find(x => x.id === id);
+    if (!c) return;
+    const rFrom = regards.find(r => r.id === c.from);
+    const rTo = regards.find(r => r.id === c.to);
+    editingCollecteurId = id;
+    document.getElementById('editCollecteurSummary').textContent =
+      'Sens d\'écoulement : ' + (rFrom ? rFrom.name : '?') + ' → ' + (rTo ? rTo.name : '?');
+    document.getElementById('editCondName').value = c.name;
+    document.getElementById('editCondDiameter').value = c.diameter || '300';
+    document.getElementById('editCollecteurModal').classList.add('open');
+  }
+
+  function closeEditCollecteurModal() {
+    document.getElementById('editCollecteurModal').classList.remove('open');
+    editingCollecteurId = null;
+  }
+
+  async function confirmEditCollecteur() {
+    const c = conduites.find(x => x.id === editingCollecteurId);
+    if (!c) { closeEditCollecteurModal(); return; }
+    const name = document.getElementById('editCondName').value.trim();
+    if (!name) { alert('Indiquez un n° de collecteur.'); return; }
+    c.name = name;
+    c.diameter = document.getElementById('editCondDiameter').value;
+    await saveData();
+    closeEditCollecteurModal();
+    renderAll();
+  }
+
+  async function confirmDeleteCollecteurFromEdit() {
+    const id = editingCollecteurId;
+    if (!id) return;
+    if (!confirm('Supprimer ce collecteur ?')) return;
     conduites = conduites.filter(c => c.id !== id);
     await saveData();
+    closeEditCollecteurModal();
     renderAll();
+  }
+
+  // ----- Import KML : recharge des regards/collecteurs depuis un fichier .kml existant -----
+  function handleImportKmlFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = ''; // permet de re-choisir le même fichier une prochaine fois
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const result = parseKMLString(reader.result);
+        if (result.regards.length === 0 && result.conduites.length === 0) {
+          setImportStatus('Aucun regard ni collecteur reconnu dans ce fichier KML.', 'err');
+          return;
+        }
+        const merge = regards.length > 0 || conduites.length > 0
+          ? confirm('Remplacer les données actuelles (' + regards.length + ' regard(s), ' + conduites.length + ' collecteur(s)) par celles du fichier importé ?\n\nAnnuler = fusionner à la place (ajouter sans supprimer l\'existant).')
+          : true;
+
+        if (merge) {
+          regards = result.regards;
+          conduites = result.conduites;
+        } else {
+          regards = regards.concat(result.regards);
+          conduites = conduites.concat(result.conduites);
+        }
+        await saveData();
+        renderAll();
+        setImportStatus('Import réussi : ' + result.regards.length + ' regard(s), ' + result.conduites.length + ' collecteur(s).', 'ok');
+      } catch (e) {
+        console.error('Erreur import KML', e);
+        setImportStatus('Fichier KML invalide ou illisible. Vérifiez qu\'il provient bien de cette application ou de Google Earth.', 'err');
+      }
+    };
+    reader.onerror = () => setImportStatus('Impossible de lire ce fichier.', 'err');
+    reader.readAsText(file);
+  }
+
+  function setImportStatus(msg, kind) {
+    const el = document.getElementById('importStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'status-msg' + (kind === 'ok' ? ' status-ok' : kind === 'err' ? ' status-err' : '');
+  }
+
+  // Lit un KML généré par cette application (structure Placemark Point/LineString avec
+  // <name> = n° de regard/collecteur, <description> contenant Etat:/Diametre:).
+  // Les regards sont d'abord tous recréés avec de nouveaux id, puis les collecteurs sont
+  // reliés par nom de regard (le nom du point de départ/arrivée du LineString le plus proche).
+  function parseKMLString(text) {
+    const xml = new DOMParser().parseFromString(text, 'text/xml');
+    if (xml.querySelector('parsererror')) throw new Error('xml-parse-error');
+
+    const newRegards = [];
+    const placemarks = Array.from(xml.getElementsByTagName('Placemark'));
+
+    placemarks.forEach(pm => {
+      const point = pm.getElementsByTagName('Point')[0];
+      if (!point) return;
+      const coordText = (point.getElementsByTagName('coordinates')[0]?.textContent || '').trim();
+      const [lonStr, latStr] = coordText.split(',');
+      const lat = parseFloat(latStr), lon = parseFloat(lonStr);
+      if (isNaN(lat) || isNaN(lon)) return;
+      const name = (pm.getElementsByTagName('name')[0]?.textContent || '').trim() || ('R' + (newRegards.length + 1));
+      const desc = pm.getElementsByTagName('description')[0]?.textContent || '';
+      const etatMatch = desc.match(/Etat\s*:\s*([^\n]*)/i);
+      newRegards.push({
+        id: 'R' + Date.now() + '_' + newRegards.length,
+        name,
+        etat: etatMatch ? etatMatch[1].trim() : '',
+        lat, lon,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    const newConduites = [];
+    placemarks.forEach(pm => {
+      const line = pm.getElementsByTagName('LineString')[0];
+      if (!line) return;
+      const coordText = (line.getElementsByTagName('coordinates')[0]?.textContent || '').trim();
+      const pts = coordText.split(/\s+/).map(p => p.split(',').map(Number));
+      if (pts.length < 2) return;
+      const [lon1, lat1] = pts[0];
+      const [lon2, lat2] = pts[pts.length - 1];
+
+      const findNearest = (lat, lon) => {
+        let best = null, bestDist = Infinity;
+        newRegards.forEach(r => {
+          const d = Math.hypot(r.lat - lat, r.lon - lon);
+          if (d < bestDist) { bestDist = d; best = r; }
+        });
+        return best;
+      };
+      const rFrom = findNearest(lat1, lon1);
+      const rTo = findNearest(lat2, lon2);
+      if (!rFrom || !rTo) return;
+
+      const name = (pm.getElementsByTagName('name')[0]?.textContent || '').trim() || ('C' + (newConduites.length + 1));
+      const desc = pm.getElementsByTagName('description')[0]?.textContent || '';
+      const diamMatch = desc.match(/Diametre\s*:\s*(\d+)/i);
+      newConduites.push({
+        id: 'C' + Date.now() + '_' + newConduites.length,
+        name,
+        from: rFrom.id, to: rTo.id,
+        diameter: diamMatch ? diamMatch[1] : '300',
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    return { regards: newRegards, conduites: newConduites };
   }
 
   // ----- Render -----
-  function regardLabel(r) { return r.name + (r.type ? ' (' + r.type + ')' : ''); }
-
   function renderAll() {
     renderRegardList();
     renderConduiteList();
-    renderSelects();
     renderMap();
     if (fullMap) renderFullMap();
   }
@@ -742,14 +1050,12 @@
     document.getElementById('regardEmptyHint').style.display = regards.length ? 'none' : 'block';
     ul.innerHTML = '';
     regards.forEach(r => {
-      const precision = r.accuracy ? (Math.round(r.accuracy) + ' m GPS') : 'position manuelle';
       const li = document.createElement('li');
       li.innerHTML = `<div class="item-info">
           <b><span class="dot"></span>${escapeHTML(r.name)}</b>
-          <span class="meta">${escapeHTML(r.type || '')}${r.depth ? ' \u00b7 ' + r.depth + 'm' : ''} \u00b7 ${r.lat.toFixed(5)}, ${r.lon.toFixed(5)} \u00b7 ${precision}</span>
-          ${r.note ? '<span class="note">' + escapeHTML(r.note) + '</span>' : ''}
+          <span class="meta">${escapeHTML(r.etat || 'état non renseigné')} \u00b7 ${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}</span>
         </div>
-        <button class="btn-danger-text" onclick="deleteRegard('${r.id}')" aria-label="Supprimer">\u2715</button>`;
+        <button class="btn-danger-text" onclick="quickDeleteRegard('${r.id}')" aria-label="Supprimer">\u2715</button>`;
       ul.appendChild(li);
     });
   }
@@ -764,47 +1070,55 @@
       const rTo = regards.find(r => r.id === c.to);
       const li = document.createElement('li');
       li.innerHTML = `<div class="item-info">
-          <b><span class="dash"></span>${escapeHTML(rFrom ? rFrom.name : '?')} \u2192 ${escapeHTML(rTo ? rTo.name : '?')}</b>
-          <span class="meta">${escapeHTML(c.type)}${c.diameter ? ' \u00b7 \u00d8' + c.diameter + 'mm' : ''}${c.material ? ' \u00b7 ' + escapeHTML(c.material) : ''}</span>
-          ${c.note ? '<span class="note">' + escapeHTML(c.note) + '</span>' : ''}
+          <b><span class="dash"></span>${escapeHTML(c.name)}</b>
+          <span class="meta">${escapeHTML(rFrom ? rFrom.name : '?')} \u2192 ${escapeHTML(rTo ? rTo.name : '?')} (sens d'écoulement) \u00b7 \u00d8${escapeHTML(String(c.diameter || '300'))}mm</span>
         </div>
-        <button class="btn-danger-text" onclick="deleteConduite('${c.id}')" aria-label="Supprimer">\u2715</button>`;
+        <button class="btn-danger-text" onclick="quickDeleteCollecteur('${c.id}')" aria-label="Supprimer">\u2715</button>`;
       ul.appendChild(li);
     });
   }
 
-  function renderSelects() {
-    const fromSel = document.getElementById('condFrom');
-    const toSel = document.getElementById('condTo');
-    const prevFrom = fromSel.value, prevTo = toSel.value;
-    const options = '<option value="">\u2014 choisir \u2014</option>' +
-      regards.map(r => `<option value="${r.id}">${escapeHTML(regardLabel(r))}</option>`).join('');
-    fromSel.innerHTML = options;
-    toSel.innerHTML = options;
-    fromSel.value = regards.find(r => r.id === prevFrom) ? prevFrom : '';
-    toSel.value = regards.find(r => r.id === prevTo) ? prevTo : '';
+  async function quickDeleteRegard(id) {
+    const usedIn = conduites.filter(c => c.from === id || c.to === id);
+    let msg = 'Supprimer ce regard ?';
+    if (usedIn.length > 0) msg += ' ' + usedIn.length + ' collecteur(s) lié(s) seront aussi supprimés.';
+    if (!confirm(msg)) return;
+    regards = regards.filter(r => r.id !== id);
+    conduites = conduites.filter(c => c.from !== id && c.to !== id);
+    await saveData();
+    renderAll();
   }
 
+  async function quickDeleteCollecteur(id) {
+    if (!confirm('Supprimer ce collecteur ?')) return;
+    conduites = conduites.filter(c => c.id !== id);
+    await saveData();
+    renderAll();
+  }
+
+  // Carte réduite (aperçu en haut de page) : affichage simple en lecture seule,
+  // avec étiquettes texte comme sur la carte complète.
   function renderMap() {
     markerLayerGroup.clearLayers();
     lineLayerGroup.clearLayers();
     const bounds = [];
     regards.forEach(r => {
-      const marker = L.circleMarker([r.lat, r.lon], {
-        radius: 7, color: '#c2790f', fillColor: '#c2790f', fillOpacity: 0.9, weight: 2
+      L.circleMarker([r.lat, r.lon], {
+        radius: 7, color: '#ffffff', weight: 2, fillColor: '#c2790f', fillOpacity: 0.95
       }).addTo(markerLayerGroup);
-      marker.bindPopup(`<b>${escapeHTML(r.name)}</b><br>${escapeHTML(r.type || '')}${r.depth ? ' \u00b7 ' + r.depth + 'm' : ''}<br>${escapeHTML(r.note || '')}`);
+      L.marker([r.lat, r.lon], {
+        icon: L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }),
+        interactive: false
+      }).addTo(markerLayerGroup);
       bounds.push([r.lat, r.lon]);
     });
     conduites.forEach(c => {
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
       if (!rFrom || !rTo) return;
-      const line = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], { color: '#2d6a4f', weight: 4 }).addTo(lineLayerGroup);
-      line.bindPopup(`<b>${escapeHTML(c.type)}</b>${c.diameter ? ' \u00d8' + c.diameter + 'mm' : ''}<br>${escapeHTML(c.material || '')}<br>${escapeHTML(c.note || '')}`);
+      L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], { color: '#2d6a4f', weight: 4 }).addTo(lineLayerGroup);
     });
-    // Ne recadre que s'il n'y a pas de point en cours de placement, pour ne pas perturber l'utilisateur en plein pointage
-    if (bounds.length && !draftMarker) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 18 });
+    if (bounds.length) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 18 });
   }
 
   // ----- Utils -----
@@ -825,21 +1139,19 @@
       '  <Folder>\n    <name>Regards</name>\n';
 
     regards.forEach(r => {
-      const precision = r.accuracy ? (Math.round(r.accuracy) + ' m (GPS)') : 'placement manuel';
-      const desc = 'Type: ' + (r.type || '') + '\nProfondeur: ' + (r.depth || '-') + ' m\nPrecision: ' + precision + '\nNote: ' + (r.note || '-');
+      const desc = 'Etat: ' + (r.etat || '-');
       kml += '    <Placemark>\n      <name>' + escapeXML(r.name) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
         '      <styleUrl>#regardStyle</styleUrl>\n      <Point><coordinates>' + r.lon + ',' + r.lat + ',0</coordinates></Point>\n    </Placemark>\n';
     });
 
-    kml += '  </Folder>\n  <Folder>\n    <name>Conduites</name>\n';
+    kml += '  </Folder>\n  <Folder>\n    <name>Collecteurs</name>\n';
 
     conduites.forEach(c => {
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
       if (!rFrom || !rTo) return;
-      const label = rFrom.name + ' -> ' + rTo.name;
-      const desc = 'Type: ' + c.type + '\nDiametre: ' + (c.diameter || '-') + ' mm\nMateriau: ' + (c.material || '-') + '\nNote: ' + (c.note || '-');
-      kml += '    <Placemark>\n      <name>' + escapeXML(label) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
+      const desc = 'Sens: ' + rFrom.name + ' -> ' + rTo.name + '\nDiametre: ' + (c.diameter || '-') + ' mm';
+      kml += '    <Placemark>\n      <name>' + escapeXML(c.name) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
         '      <styleUrl>#conduiteStyle</styleUrl>\n      <LineString><coordinates>' + rFrom.lon + ',' + rFrom.lat + ',0 ' + rTo.lon + ',' + rTo.lat + ',0</coordinates></LineString>\n    </Placemark>\n';
     });
 
