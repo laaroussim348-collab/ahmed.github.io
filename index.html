@@ -71,6 +71,19 @@
   .card.regards .badge-count { background: var(--manhole); }
   .card.conduites .badge-count { background: var(--primary); }
 
+  /* Bouton +/- pour replier/déplier la liste des regards ou des collecteurs,
+     comme un panneau "Layers" dans un logiciel GIS ou Google Earth : évite de
+     devoir faire défiler toute la liste pour atteindre le bouton d'export plus bas. */
+  .toggle-list-btn {
+    width: 26px; height: 26px; border-radius: 8px; border: none;
+    background: var(--manhole-deep); color: white; font-size: 16px; font-weight: 700;
+    line-height: 1; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .card.conduites .toggle-list-btn, #condToggleBtn { background: var(--primary-deep); }
+  .collapsible-list { display: none; }
+  .collapsible-list.open { display: block; }
+
   .hint { font-size: 12.5px; color: var(--text-light); margin: 0 0 10px; line-height: 1.5; }
 
   label { display: block; font-size: 12.5px; color: var(--text-light); margin: 10px 0 4px; }
@@ -315,15 +328,25 @@
   </div>
 
   <div class="card">
-    <h2><span class="dot"></span>Regards <span class="badge-count" id="regardCount">0</span></h2>
-    <ul class="item-list" id="regardList"></ul>
-    <div class="empty-hint" id="regardEmptyHint">Aucun regard pour l'instant. Ouvrez la carte complète et touchez un point pour en créer un.</div>
+    <h2>
+      <span class="dot"></span>Regards <span class="badge-count" id="regardCount">0</span>
+      <button class="toggle-list-btn" id="regardToggleBtn" onclick="toggleListSection('regard')" aria-label="Afficher/masquer la liste">+</button>
+    </h2>
+    <div class="collapsible-list" id="regardListWrap">
+      <ul class="item-list" id="regardList"></ul>
+      <div class="empty-hint" id="regardEmptyHint">Aucun regard pour l'instant. Ouvrez la carte complète et touchez un point pour en créer un.</div>
+    </div>
   </div>
 
   <div class="card">
-    <h2><span class="dash"></span>Collecteurs <span class="badge-count" id="conduiteCount">0</span></h2>
-    <ul class="item-list" id="condList"></ul>
-    <div class="empty-hint" id="condEmptyHint">Aucun collecteur pour l'instant. Ouvrez la carte complète, activez le mode "Dessiner un collecteur", puis touchez deux regards.</div>
+    <h2>
+      <span class="dash"></span>Collecteurs <span class="badge-count" id="conduiteCount">0</span>
+      <button class="toggle-list-btn" id="condToggleBtn" onclick="toggleListSection('cond')" aria-label="Afficher/masquer la liste">+</button>
+    </h2>
+    <div class="collapsible-list" id="condListWrap">
+      <ul class="item-list" id="condList"></ul>
+      <div class="empty-hint" id="condEmptyHint">Aucun collecteur pour l'instant. Ouvrez la carte complète, activez le mode "Dessiner un collecteur", puis touchez deux regards.</div>
+    </div>
   </div>
 
   <div class="card">
@@ -1194,10 +1217,34 @@
     if (fullMap) renderFullMap();
   }
 
+  // ----- Listes Regards / Collecteurs repliables (façon panneau "Layers" GIS) -----
+  // Repliées par défaut pour ne pas avoir à descendre toute la liste pour atteindre
+  // l'export quand il y a beaucoup de points déjà saisis.
+  let regardListOpen = false;
+  let condListOpen = false;
+
+  function toggleListSection(which) {
+    if (which === 'regard') {
+      regardListOpen = !regardListOpen;
+      applyListSectionState('regard', regardListOpen);
+    } else {
+      condListOpen = !condListOpen;
+      applyListSectionState('cond', condListOpen);
+    }
+  }
+
+  function applyListSectionState(which, isOpen) {
+    const wrap = document.getElementById(which === 'regard' ? 'regardListWrap' : 'condListWrap');
+    const btn = document.getElementById(which === 'regard' ? 'regardToggleBtn' : 'condToggleBtn');
+    if (wrap) wrap.classList.toggle('open', isOpen);
+    if (btn) btn.textContent = isOpen ? '\u2212' : '+';
+  }
+
   function renderRegardList() {
     const ul = document.getElementById('regardList');
     document.getElementById('regardCount').textContent = regards.length;
     document.getElementById('regardEmptyHint').style.display = regards.length ? 'none' : 'block';
+    applyListSectionState('regard', regardListOpen);
     ul.innerHTML = '';
     regards.forEach(r => {
       const li = document.createElement('li');
@@ -1214,6 +1261,7 @@
     const ul = document.getElementById('condList');
     document.getElementById('conduiteCount').textContent = conduites.length;
     document.getElementById('condEmptyHint').style.display = conduites.length ? 'none' : 'block';
+    applyListSectionState('cond', condListOpen);
     ul.innerHTML = '';
     conduites.forEach(c => {
       const rFrom = regards.find(r => r.id === c.from);
