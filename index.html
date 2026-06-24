@@ -416,6 +416,8 @@
     <p class="hint" id="collecteurModalSummary"></p>
     <label>N° de collecteur *</label>
     <input id="modalCondName" placeholder="ex: C1" autocomplete="off">
+    <label>Couleur</label>
+    <div class="color-picker" id="modalCondColorPicker"></div>
     <label>Diamètre</label>
     <select id="modalCondDiameter">
       <option value="200">200 mm</option>
@@ -443,6 +445,7 @@
     <div class="color-picker" id="editRegardColorPicker"></div>
     <label>État du regard</label>
     <input id="editRegardEtat" placeholder="ex: bon, fissuré, cassé...">
+    <button class="btn-outline" id="moveRegardBtn" onclick="startMoveRegard()">📍 Déplacer ce point sur la carte</button>
     <div class="modal-actions">
       <button class="btn-outline-danger" onclick="confirmDeleteRegardFromEdit()">Supprimer</button>
       <button class="btn-manhole" onclick="confirmEditRegard()">Enregistrer</button>
@@ -454,9 +457,14 @@
 <div class="modal-backdrop" id="editCollecteurModal">
   <div class="modal-sheet">
     <h3>Modifier le collecteur</h3>
-    <p class="hint" id="editCollecteurSummary"></p>
     <label>N° de collecteur *</label>
     <input id="editCondName" placeholder="ex: C1" autocomplete="off">
+    <label>Couleur</label>
+    <div class="color-picker" id="editCondColorPicker"></div>
+    <label>Regard de départ (sens d'écoulement)</label>
+    <select id="editCondFrom"></select>
+    <label>Regard d'arrivée</label>
+    <select id="editCondTo"></select>
     <label>Diamètre</label>
     <select id="editCondDiameter">
       <option value="200">200 mm</option>
@@ -575,6 +583,7 @@
   let pendingNewRegardLatLng = null; // coordonnées en attente de confirmation dans la fiche "Nouveau regard"
   let editingRegardId = null;
   let editingCollecteurId = null;
+  let moveRegardMode = false; // true = on attend un tap sur la carte pour déplacer editingRegardId
   const LONG_PRESS_MS = 480;
 
   function openFullMap() {
@@ -586,8 +595,14 @@
       fullMapMarkerLayer = L.layerGroup().addTo(fullMap);
 
       // Tap simple sur le fond de carte (pas sur un marqueur) = nouveau regard à cet endroit,
-      // sauf si on est en plein dessin de collecteur (on doit alors taper sur des regards existants).
+      // sauf si on est en plein dessin de collecteur (on doit alors taper sur des regards
+      // existants), ou en plein déplacement d'un regard existant (le tap suivant déplace
+      // ce regard à cet endroit au lieu d'en créer un nouveau).
       fullMap.on('click', (e) => {
+        if (moveRegardMode) {
+          confirmMoveRegard(e.latlng.lat, e.latlng.lng);
+          return;
+        }
         if (drawMode) {
           setDrawHint('Touchez un regard existant pour ' + (drawFromRegardId ? 'le point d\'arrivée.' : 'le point de départ.'));
           return;
@@ -602,10 +617,13 @@
     document.getElementById('fullMapOverlay').classList.remove('open');
     exitDrawMode();
     stopMyLocationTracking();
+    moveRegardMode = false;
+    setDrawHint('');
   }
 
   function toggleDrawMode() {
     if (drawMode) { exitDrawMode(); return; }
+    if (moveRegardMode) { moveRegardMode = false; } // on ne peut pas dessiner pendant un déplacement de regard en cours
     drawMode = true;
     drawFromRegardId = null;
     document.getElementById('drawModeBtn').classList.add('active');
@@ -680,6 +698,7 @@
 
       bindLongPress(marker, () => openEditRegardModal(r.id), () => {
         if (drawMode) handleRegardTapInDrawMode(r.id);
+        else if (moveRegardMode) confirmMoveRegard(r.lat, r.lon); // déplace sur un autre regard = superposition possible mais autorisée si voulu
       });
 
       bounds.push([r.lat, r.lon]);
@@ -690,8 +709,9 @@
       const rTo = regards.find(r => r.id === c.to);
       if (!rFrom || !rTo) return;
 
+      const condColor = c.color || DEFAULT_COND_COLOR;
       const line = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], {
-        color: '#2d6a4f', weight: 4
+        color: condColor, weight: 4
       }).addTo(fullMapLineLayer);
       bindLongPress(line, () => openEditCollecteurModal(c.id));
 
@@ -705,7 +725,7 @@
       const arrow = L.marker([midLat, midLon], {
         icon: L.divIcon({
           className: 'flow-arrow-icon',
-          html: '<div style="transform: rotate(' + angleDeg + 'deg); width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid #2d6a4f;"></div>',
+          html: '<div style="transform: rotate(' + angleDeg + 'deg); width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid ' + condColor + ';"></div>',
           iconSize: [14, 12],
           iconAnchor: [7, 6]
         }),
@@ -909,10 +929,15 @@
   const REGARD_COLORS = ['#c2790f', '#d62828', '#1d4ed8', '#2d6a4f', '#7c3aed'];
   const DEFAULT_REGARD_COLOR = REGARD_COLORS[0];
 
-  function buildColorPicker(containerId, selectedColor, onSelect) {
+  // ----- Couleur des collecteurs : 5 couleurs au choix, appliquées au tracé du collecteur -----
+  const COND_COLORS = ['#2d6a4f', '#1d4ed8', '#d62828', '#c2790f', '#0891b2'];
+  const DEFAULT_COND_COLOR = COND_COLORS[0];
+
+  function buildColorPicker(containerId, selectedColor, onSelect, palette) {
     const el = document.getElementById(containerId);
+    const colors = palette || REGARD_COLORS;
     el.innerHTML = '';
-    REGARD_COLORS.forEach(color => {
+    colors.forEach(color => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'color-swatch' + (color === selectedColor ? ' selected' : '');
@@ -1000,6 +1025,32 @@
     renderAll();
   }
 
+  // ----- Regards : déplacer un point existant -----
+  // On ne permet jamais de glisser librement un regard avec la souris/le doigt (trop
+  // imprécis et source d'erreurs) : on ferme la fiche, on affiche un message clair, et
+  // le PROCHAIN tap sur la carte déplace ce regard précis à cet endroit exact.
+  function startMoveRegard() {
+    if (!editingRegardId) return;
+    // On garde editingRegardId en mémoire pour confirmMoveRegard(), donc on ferme
+    // seulement l'affichage de la fiche sans réinitialiser cet id (contrairement à
+    // closeEditRegardModal, utilisée partout ailleurs).
+    document.getElementById('editRegardModal').classList.remove('open');
+    moveRegardMode = true;
+    setDrawHint('Touchez l\'emplacement exact où déplacer ce regard sur la carte.');
+  }
+
+  async function confirmMoveRegard(lat, lon) {
+    const r = regards.find(x => x.id === editingRegardId);
+    moveRegardMode = false;
+    setDrawHint('');
+    editingRegardId = null;
+    if (!r) return;
+    r.lat = lat;
+    r.lon = lon;
+    await saveData();
+    renderAll();
+  }
+
   async function confirmDeleteRegardFromEdit() {
     const id = editingRegardId;
     if (!id) return;
@@ -1019,10 +1070,12 @@
     const rFrom = regards.find(r => r.id === fromId);
     const rTo = regards.find(r => r.id === toId);
     pendingCollecteurFromTo = { from: fromId, to: toId };
+    pendingNewCondColor = DEFAULT_COND_COLOR;
     document.getElementById('collecteurModalSummary').textContent =
       'Sens d\'écoulement : ' + (rFrom ? rFrom.name : '?') + ' → ' + (rTo ? rTo.name : '?');
     document.getElementById('modalCondName').value = nextCollecteurSuggestion();
     document.getElementById('modalCondDiameter').value = '300';
+    buildColorPicker('modalCondColorPicker', pendingNewCondColor, (c) => { pendingNewCondColor = c; }, COND_COLORS);
     document.getElementById('collecteurModal').classList.add('open');
     setTimeout(() => document.getElementById('modalCondName').focus(), 100);
   }
@@ -1032,6 +1085,8 @@
   }
 
   let pendingCollecteurFromTo = null;
+  let pendingNewCondColor = DEFAULT_COND_COLOR;
+  let editingCondColor = DEFAULT_COND_COLOR;
 
   function closeCollecteurModal() {
     document.getElementById('collecteurModal').classList.remove('open');
@@ -1050,6 +1105,7 @@
       from: pendingCollecteurFromTo.from,
       to: pendingCollecteurFromTo.to,
       diameter: document.getElementById('modalCondDiameter').value,
+      color: pendingNewCondColor,
       timestamp: new Date().toISOString()
     });
     await saveData();
@@ -1058,16 +1114,29 @@
   }
 
   // ----- Collecteurs : modification / suppression (appui long sur la carte complète) -----
+  // Le tracé d'un collecteur reste toujours ancré entre deux regards existants : on ne
+  // permet jamais de le déplacer "dans le vide". Modifier un collecteur revient donc à
+  // choisir, dans deux listes déroulantes, quels regards (déjà placés) sont son départ
+  // et son arrivée — jamais à faire glisser une ligne librement sur la carte.
+  function populateCollecteurRegardSelects(selectedFromId, selectedToId) {
+    const fromSel = document.getElementById('editCondFrom');
+    const toSel = document.getElementById('editCondTo');
+    const optionsHtml = regards.map(r => `<option value="${r.id}">${escapeHTML(r.name)}</option>`).join('');
+    fromSel.innerHTML = optionsHtml;
+    toSel.innerHTML = optionsHtml;
+    if (selectedFromId) fromSel.value = selectedFromId;
+    if (selectedToId) toSel.value = selectedToId;
+  }
+
   function openEditCollecteurModal(id) {
     const c = conduites.find(x => x.id === id);
     if (!c) return;
-    const rFrom = regards.find(r => r.id === c.from);
-    const rTo = regards.find(r => r.id === c.to);
     editingCollecteurId = id;
-    document.getElementById('editCollecteurSummary').textContent =
-      'Sens d\'écoulement : ' + (rFrom ? rFrom.name : '?') + ' → ' + (rTo ? rTo.name : '?');
+    editingCondColor = c.color || DEFAULT_COND_COLOR;
     document.getElementById('editCondName').value = c.name;
     document.getElementById('editCondDiameter').value = c.diameter || '300';
+    populateCollecteurRegardSelects(c.from, c.to);
+    buildColorPicker('editCondColorPicker', editingCondColor, (col) => { editingCondColor = col; }, COND_COLORS);
     document.getElementById('editCollecteurModal').classList.add('open');
   }
 
@@ -1081,8 +1150,15 @@
     if (!c) { closeEditCollecteurModal(); return; }
     const name = document.getElementById('editCondName').value.trim();
     if (!name) { alert('Indiquez un n° de collecteur.'); return; }
+    const fromId = document.getElementById('editCondFrom').value;
+    const toId = document.getElementById('editCondTo').value;
+    if (!fromId || !toId) { alert('Choisissez un regard de départ et un regard d\'arrivée.'); return; }
+    if (fromId === toId) { alert('Le départ et l\'arrivée doivent être deux regards différents.'); return; }
     c.name = name;
     c.diameter = document.getElementById('editCondDiameter').value;
+    c.color = editingCondColor;
+    c.from = fromId;
+    c.to = toId;
     await saveData();
     closeEditCollecteurModal();
     renderAll();
@@ -1268,7 +1344,7 @@
       const rTo = regards.find(r => r.id === c.to);
       const li = document.createElement('li');
       li.innerHTML = `<div class="item-info">
-          <b><span class="dash"></span>${escapeHTML(c.name)}</b>
+          <b><span class="dash" style="background:${c.color || DEFAULT_COND_COLOR}"></span>${escapeHTML(c.name)}</b>
           <span class="meta">${escapeHTML(rFrom ? rFrom.name : '?')} \u2192 ${escapeHTML(rTo ? rTo.name : '?')} (sens d'écoulement) \u00b7 \u00d8${escapeHTML(String(c.diameter || '300'))}mm</span>
         </div>
         <button class="btn-danger-text" onclick="quickDeleteCollecteur('${c.id}')" aria-label="Supprimer">\u2715</button>`;
@@ -1314,7 +1390,7 @@
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
       if (!rFrom || !rTo) return;
-      L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], { color: '#2d6a4f', weight: 4 }).addTo(lineLayerGroup);
+      L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], { color: c.color || DEFAULT_COND_COLOR, weight: 4 }).addTo(lineLayerGroup);
     });
     if (bounds.length) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 18 });
   }
