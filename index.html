@@ -750,89 +750,191 @@
     attach();
   }
 
+  // Caches associant chaque regard/collecteur à ses calques Leaflet déjà créés.
+  // But : ne JAMAIS recréer un calque (et donc rattacher des écouteurs d'événements)
+  // pour un point/trait qui existe déjà depuis le rendu précédent. Avant cette
+  // optimisation, chaque appel à renderFullMap() supprimait puis recréait TOUS les
+  // calques de zéro (y compris leurs écouteurs pointerdown/up/move dédiés à la
+  // pression longue) — même pour ajouter un seul nouveau point. Avec des dizaines
+  // d'appels à renderFullMap() pendant une session de saisie, les écouteurs et objets
+  // en attente de nettoyage s'accumulaient en mémoire bien plus vite que le garbage
+  // collector ne pouvait les libérer, d'où un ralentissement progressif très rapide
+  // de la carte entière (pas seulement des points), même avec très peu d'éléments.
+  const regardLayerCache = new Map();   // id -> { marker, touchTarget, label }
+  const condLayerCache = new Map();     // id -> { line, touchTarget, arrow, label }
+
   function renderFullMap() {
     if (!fullMap) return;
-    fullMapMarkerLayer.clearLayers();
-    fullMapLineLayer.clearLayers();
     const bounds = [];
+    const seenRegardIds = new Set();
+    const seenCondIds = new Set();
 
     regards.forEach(r => {
+      seenRegardIds.add(r.id);
       const isDrawFrom = drawMode && drawFromRegardId === r.id;
-      const marker = L.circleMarker([r.lat, r.lon], {
+      const color = r.color || DEFAULT_REGARD_COLOR;
+      let entry = regardLayerCache.get(r.id);
+
+      if (!entry) {
+        // Première fois qu'on voit ce regard : on crée ses calques une seule fois.
+        const marker = L.circleMarker([r.lat, r.lon], {
+          radius: 8, color: '#ffffff', weight: 2, fillColor: color, fillOpacity: 0.95,
+          interactive: false // la zone tactile réelle est la touchTarget invisible ci-dessous
+        }).addTo(fullMapMarkerLayer);
+
+        // Zone tactile invisible mais bien plus grande que le point visuel (8-10px) :
+        // un point de cette taille est trop petit pour un appui long fiable au doigt sur
+        // mobile (cible tactile recommandée : ~40px). On capte donc la pression longue ici.
+        // Un L.Marker (élément DOM HTML léger via divIcon) plutôt qu'un circleMarker SVG :
+        // plus simple à cibler de façon fiable avec les Pointer Events, et indépendant du
+        // mode de rendu (Canvas/SVG) choisi pour les points et traits visuels eux-mêmes.
+        const touchTarget = L.marker([r.lat, r.lon], {
+          icon: L.divIcon({ className: 'touch-target-point', html: '', iconSize: [44, 44], iconAnchor: [22, 22] }),
+          keyboard: false
+        }).addTo(fullMapMarkerLayer);
+
+        const label = L.marker([r.lat, r.lon], {
+          icon: L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }),
+          interactive: false
+        }).addTo(fullMapMarkerLayer);
+
+        // bindLongPress n'est appelée qu'ICI, une seule fois par regard pour toute la
+        // durée de vie de la carte (sauf suppression) : les écouteurs ne sont jamais dupliqués.
+        bindLongPress(touchTarget, () => openEditRegardModal(r.id), () => {
+          if (drawMode) handleRegardTapInDrawMode(r.id);
+          else if (moveRegardMode) confirmMoveRegard(r.lat, r.lon);
+        });
+
+        entry = { marker, touchTarget, label, lastLat: r.lat, lastLon: r.lon, lastColor: color, lastName: r.name };
+        regardLayerCache.set(r.id, entry);
+      } else {
+        // Déjà existant : on met juste à jour position/couleur/nom si besoin, sans
+        // recréer aucun calque ni aucun écouteur d'événement.
+        if (entry.lastLat !== r.lat || entry.lastLon !== r.lon) {
+          const ll = [r.lat, r.lon];
+          entry.marker.setLatLng(ll);
+          entry.touchTarget.setLatLng(ll);
+          entry.label.setLatLng(ll);
+          entry.lastLat = r.lat; entry.lastLon = r.lon;
+        }
+        if (entry.lastColor !== color) {
+          entry.marker.setStyle({ fillColor: color });
+          entry.lastColor = color;
+        }
+        if (entry.lastName !== r.name) {
+          entry.label.setIcon(L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }));
+          entry.lastName = r.name;
+        }
+      }
+
+      // Surbrillance du regard de départ choisi pendant le dessin d'un collecteur :
+      // un simple changement de style, pas une recréation du calque.
+      entry.marker.setStyle({
         radius: isDrawFrom ? 10 : 8,
         color: isDrawFrom ? '#c0392b' : '#ffffff',
-        weight: isDrawFrom ? 3 : 2,
-        fillColor: r.color || DEFAULT_REGARD_COLOR,
-        fillOpacity: 0.95,
-        interactive: false // la zone tactile réelle est la touchTarget invisible ci-dessous
-      }).addTo(fullMapMarkerLayer);
-
-      // Zone tactile invisible mais bien plus grande que le point visuel (8-10px) :
-      // un point de cette taille est trop petit pour un appui long fiable au doigt sur
-      // mobile (cible tactile recommandée : ~40px). On capte donc la pression longue ici.
-      // Un L.Marker (élément DOM HTML léger via divIcon) plutôt qu'un circleMarker SVG :
-      // plus simple à cibler de façon fiable avec les Pointer Events, et indépendant du
-      // mode de rendu (Canvas/SVG) choisi pour les points et traits visuels eux-mêmes.
-      const touchTarget = L.marker([r.lat, r.lon], {
-        icon: L.divIcon({ className: 'touch-target-point', html: '', iconSize: [44, 44], iconAnchor: [22, 22] }),
-        keyboard: false
-      }).addTo(fullMapMarkerLayer);
-
-      const label = L.marker([r.lat, r.lon], {
-        icon: L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }),
-        interactive: false
-      }).addTo(fullMapMarkerLayer);
-
-      bindLongPress(touchTarget, () => openEditRegardModal(r.id), () => {
-        if (drawMode) handleRegardTapInDrawMode(r.id);
-        else if (moveRegardMode) confirmMoveRegard(r.lat, r.lon); // déplace sur un autre regard = superposition possible mais autorisée si voulu
+        weight: isDrawFrom ? 3 : 2
       });
 
       bounds.push([r.lat, r.lon]);
     });
 
+    // Supprime les calques des regards qui n'existent plus (vraie suppression demandée
+    // par l'utilisateur) — c'est le seul cas où l'on retire des calques de la carte.
+    for (const [id, entry] of regardLayerCache) {
+      if (!seenRegardIds.has(id)) {
+        fullMapMarkerLayer.removeLayer(entry.marker);
+        fullMapMarkerLayer.removeLayer(entry.touchTarget);
+        fullMapMarkerLayer.removeLayer(entry.label);
+        regardLayerCache.delete(id);
+      }
+    }
+
     conduites.forEach(c => {
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
       if (!rFrom || !rTo) return;
+      seenCondIds.add(c.id);
 
       const condColor = c.color || DEFAULT_COND_COLOR;
-      const line = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], {
-        color: condColor, weight: 4, interactive: false
-      }).addTo(fullMapLineLayer);
-
-      // Zone tactile invisible mais bien plus large (20px) que le trait visuel (4px) :
-      // un trait aussi fin est très difficile à viser précisément au doigt sur mobile.
-      // On force ce tracé-là en rendu SVG (malgré preferCanvas sur la carte) car notre
-      // détection de pression longue a besoin d'un élément DOM réel (_path) : un rendu
-      // Canvas ne crée pas d'élément DOM individuel par forme.
-      const lineTouchTarget = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], {
-        color: '#000000', opacity: 0, weight: 20, renderer: fullMapSvgRenderer
-      }).addTo(fullMapLineLayer);
-      bindLongPress(lineTouchTarget, () => openEditCollecteurModal(c.id));
-
+      const midLat = (rFrom.lat + rTo.lat) / 2;
+      const midLon = (rFrom.lon + rTo.lon) / 2;
       // Triangle indiquant le sens d'écoulement (départ -> arrivée), au milieu du tracé.
       // Le triangle CSS (border-top) pointe vers le bas par défaut (angle visuel 0° = bas),
       // alors que atan2 calcule un angle où 0° = nord/haut : on ajoute donc 180° pour aligner
       // la pointe du triangle sur la direction réelle départ -> arrivée.
-      const midLat = (rFrom.lat + rTo.lat) / 2;
-      const midLon = (rFrom.lon + rTo.lon) / 2;
       const angleDeg = Math.atan2(rTo.lon - rFrom.lon, rTo.lat - rFrom.lat) * 180 / Math.PI + 180;
-      const arrow = L.marker([midLat, midLon], {
-        icon: L.divIcon({
-          className: 'flow-arrow-icon',
-          html: '<div style="transform: rotate(' + angleDeg + 'deg); width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid ' + condColor + ';"></div>',
-          iconSize: [14, 12],
-          iconAnchor: [7, 6]
-        }),
-        interactive: false
-      }).addTo(fullMapLineLayer);
+      const arrowHtml = '<div style="transform: rotate(' + angleDeg + 'deg); width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid ' + condColor + ';"></div>';
 
-      const condLabel = L.marker([midLat, midLon], {
-        icon: L.divIcon({ className: 'map-label-cond', html: escapeHTML(c.name), iconSize: null, iconAnchor: [-12, -6] }),
-        interactive: false
-      }).addTo(fullMapLineLayer);
+      let entry = condLayerCache.get(c.id);
+
+      if (!entry) {
+        const line = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], {
+          color: condColor, weight: 4, interactive: false
+        }).addTo(fullMapLineLayer);
+
+        // Zone tactile invisible mais bien plus large (20px) que le trait visuel (4px) :
+        // un trait aussi fin est très difficile à viser précisément au doigt sur mobile.
+        // On force ce tracé-là en rendu SVG (malgré preferCanvas sur la carte) car notre
+        // détection de pression longue a besoin d'un élément DOM réel (_path) : un rendu
+        // Canvas ne crée pas d'élément DOM individuel par forme.
+        const touchTarget = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], {
+          color: '#000000', opacity: 0, weight: 20, renderer: fullMapSvgRenderer
+        }).addTo(fullMapLineLayer);
+
+        const arrow = L.marker([midLat, midLon], {
+          icon: L.divIcon({ className: 'flow-arrow-icon', html: arrowHtml, iconSize: [14, 12], iconAnchor: [7, 6] }),
+          interactive: false
+        }).addTo(fullMapLineLayer);
+
+        const label = L.marker([midLat, midLon], {
+          icon: L.divIcon({ className: 'map-label-cond', html: escapeHTML(c.name), iconSize: null, iconAnchor: [-12, -6] }),
+          interactive: false
+        }).addTo(fullMapLineLayer);
+
+        // bindLongPress n'est appelée qu'ICI, une seule fois par collecteur pour toute
+        // la durée de vie de la carte (sauf suppression).
+        bindLongPress(touchTarget, () => openEditCollecteurModal(c.id));
+
+        entry = {
+          line, touchTarget, arrow, label,
+          lastFromLat: rFrom.lat, lastFromLon: rFrom.lon, lastToLat: rTo.lat, lastToLon: rTo.lon,
+          lastColor: condColor, lastName: c.name
+        };
+        condLayerCache.set(c.id, entry);
+      } else {
+        const positionChanged = entry.lastFromLat !== rFrom.lat || entry.lastFromLon !== rFrom.lon ||
+          entry.lastToLat !== rTo.lat || entry.lastToLon !== rTo.lon;
+        if (positionChanged) {
+          const latlngs = [[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]];
+          entry.line.setLatLngs(latlngs);
+          entry.touchTarget.setLatLngs(latlngs);
+          entry.arrow.setLatLng([midLat, midLon]);
+          entry.label.setLatLng([midLat, midLon]);
+          entry.lastFromLat = rFrom.lat; entry.lastFromLon = rFrom.lon;
+          entry.lastToLat = rTo.lat; entry.lastToLon = rTo.lon;
+        }
+        if (entry.lastColor !== condColor || positionChanged) {
+          entry.line.setStyle({ color: condColor });
+          entry.arrow.setIcon(L.divIcon({ className: 'flow-arrow-icon', html: arrowHtml, iconSize: [14, 12], iconAnchor: [7, 6] }));
+          entry.lastColor = condColor;
+        }
+        if (entry.lastName !== c.name) {
+          entry.label.setIcon(L.divIcon({ className: 'map-label-cond', html: escapeHTML(c.name), iconSize: null, iconAnchor: [-12, -6] }));
+          entry.lastName = c.name;
+        }
+      }
     });
+
+    // Supprime les calques des collecteurs qui n'existent plus.
+    for (const [id, entry] of condLayerCache) {
+      if (!seenCondIds.has(id)) {
+        fullMapLineLayer.removeLayer(entry.line);
+        fullMapLineLayer.removeLayer(entry.touchTarget);
+        fullMapLineLayer.removeLayer(entry.arrow);
+        fullMapLineLayer.removeLayer(entry.label);
+        condLayerCache.delete(id);
+      }
+    }
 
     // On ne recadre/dézoome la vue qu'une seule fois (premier affichage), jamais pendant
     // le dessin d'un collecteur (sélection R1 puis R2) ni à chaque ajout de point ultérieur :
