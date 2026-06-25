@@ -671,7 +671,7 @@
   // savoir si c'est une pression longue (sur ce point précis) ou un glissement ailleurs,
   // et on tolère un petit déplacement du doigt (la main n'est jamais parfaitement fixe)
   // avant de considérer que c'est un vrai glissement qui doit annuler la pression longue.
-  const LONG_PRESS_MOVE_TOLERANCE_PX = 12;
+  const LONG_PRESS_MOVE_TOLERANCE_PX = 25;
 
   function bindLongPress(layer, onLongPress, onShortTap) {
     let timer = null;
@@ -717,7 +717,12 @@
 
     layer.on('mousedown touchstart', start);
     layer.on('mousemove touchmove', move);
-    layer.on('mouseup touchend mouseout', cancel);
+    // mouseout est volontairement exclu : sur mobile cet événement se déclenche au
+    // moindre micro-tremblement du doigt, ce qui annulait quasi systématiquement la
+    // pression longue avant même qu'elle ait pu se déclencher. On ne considère
+    // l'appui comme relâché/annulé que via mouseup/touchend, ou si le doigt s'est
+    // réellement déplacé au-delà de la tolérance (géré dans move()).
+    layer.on('mouseup touchend touchcancel', cancel);
     layer.on('click', () => { if (!firedLong && onShortTap) onShortTap(); });
   }
 
