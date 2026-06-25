@@ -147,11 +147,16 @@
   #fullMapOverlay #fullMap { position: absolute; inset: 0; }
   #fullMapTopBar {
     position: absolute; top: 0; left: 0; right: 0; z-index: 2001;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 14px; background: rgba(11, 31, 23, 0.85); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 10px; background: rgba(11, 31, 23, 0.85); backdrop-filter: blur(4px);
   }
-  #fullMapTopBar .title { color: white; font-weight: 700; font-size: 15px; }
-  #fullMapTopBar .count { color: #cfe8da; font-size: 12px; margin-top: 2px; }
+  #fullMapTopBar .title { color: white; font-weight: 700; font-size: 12.5px; line-height: 1.2; }
+  #fullMapTopBar .count { color: #cfe8da; font-size: 10.5px; margin-top: 1px; }
+  #fullMapCloseBtn {
+    background: white; color: var(--manhole-deep); border: none; border-radius: 50%;
+    width: 30px; height: 30px; font-weight: 700; font-size: 14px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
 
   /* Bouton "Ma position" : petit bouton compact à côté de "Dessiner un collecteur",
      plutôt qu'un gros bouton flottant séparé qui prenait trop de place. */
@@ -176,24 +181,20 @@
     0%   { transform: scale(1);   opacity: 0.7; }
     100% { transform: scale(2.8); opacity: 0; }
   }
-  #fullMapCloseBtn {
-    background: white; color: var(--manhole-deep); border: none; border-radius: 8px;
-    padding: 8px 14px; font-weight: 700; font-size: 14px;
-  }
 
   #fullMapBottomBar {
     position: absolute; bottom: 0; left: 0; right: 0; z-index: 2001;
-    padding: 12px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
     background: rgba(11, 31, 23, 0.88); backdrop-filter: blur(4px);
-    display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 5px;
   }
   .bottom-bar-row { display: flex; gap: 8px; align-items: stretch; }
   .draw-mode-btn {
-    flex: 1; border: none; border-radius: 10px; padding: 13px 14px;
-    font-weight: 700; font-size: 15px; background: var(--manhole); color: white;
+    flex: 1; border: none; border-radius: 10px; padding: 11px 14px;
+    font-weight: 700; font-size: 14px; background: var(--manhole); color: white;
   }
   .draw-mode-btn.active { background: #c0392b; }
-  .draw-mode-hint { color: #cfe8da; font-size: 12.5px; text-align: center; min-height: 16px; }
+  .draw-mode-hint { color: #cfe8da; font-size: 12px; text-align: center; min-height: 14px; }
 
   /* Étiquettes texte sur les points/lignes de la carte */
   .map-label-regard {
@@ -379,7 +380,7 @@
       <div class="title">Carte complète</div>
       <div class="count" id="fullMapCount">—</div>
     </div>
-    <button id="fullMapCloseBtn" onclick="closeFullMap()">Fermer ✕</button>
+    <button id="fullMapCloseBtn" onclick="closeFullMap()" aria-label="Fermer">✕</button>
   </div>
   <div id="fullMap"></div>
 
@@ -662,15 +663,60 @@
   }
 
   // ----- Pression longue générique sur un élément Leaflet (marqueur ou ligne) -----
+  // Sur mobile (WebKit notamment), le marqueur et la carte reçoivent tous les deux les
+  // événements tactiles : dès qu'on pose le doigt sur un point, Leaflet peut commencer
+  // à interpréter ça comme le début d'un glissement de la carte, ce qui annule notre
+  // minuteur de pression longue avant qu'il n'ait eu le temps de se déclencher. On
+  // désactive donc temporairement le glissement de la carte pendant qu'on attend de
+  // savoir si c'est une pression longue (sur ce point précis) ou un glissement ailleurs,
+  // et on tolère un petit déplacement du doigt (la main n'est jamais parfaitement fixe)
+  // avant de considérer que c'est un vrai glissement qui doit annuler la pression longue.
+  const LONG_PRESS_MOVE_TOLERANCE_PX = 12;
+
   function bindLongPress(layer, onLongPress, onShortTap) {
     let timer = null;
     let firedLong = false;
-    const start = () => {
+    let startPoint = null;
+    let dragWasEnabled = true;
+
+    function getPoint(e) {
+      const oe = e.originalEvent || e;
+      if (oe.touches && oe.touches.length) return { x: oe.touches[0].clientX, y: oe.touches[0].clientY };
+      return { x: oe.clientX, y: oe.clientY };
+    }
+
+    const start = (e) => {
       firedLong = false;
-      timer = setTimeout(() => { firedLong = true; onLongPress(); }, LONG_PRESS_MS);
+      startPoint = getPoint(e);
+      if (fullMap && fullMap.dragging) {
+        dragWasEnabled = fullMap.dragging.enabled();
+        if (dragWasEnabled) fullMap.dragging.disable();
+      }
+      timer = setTimeout(() => {
+        firedLong = true;
+        restoreDragging();
+        onLongPress();
+      }, LONG_PRESS_MS);
     };
-    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+    function restoreDragging() {
+      if (fullMap && fullMap.dragging && dragWasEnabled) fullMap.dragging.enable();
+    }
+
+    const move = (e) => {
+      if (!timer || !startPoint) return;
+      const p = getPoint(e);
+      const dist = Math.hypot(p.x - startPoint.x, p.y - startPoint.y);
+      if (dist > LONG_PRESS_MOVE_TOLERANCE_PX) cancel();
+    };
+
+    const cancel = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      restoreDragging();
+    };
+
     layer.on('mousedown touchstart', start);
+    layer.on('mousemove touchmove', move);
     layer.on('mouseup touchend mouseout', cancel);
     layer.on('click', () => { if (!firedLong && onShortTap) onShortTap(); });
   }
@@ -688,7 +734,15 @@
         color: isDrawFrom ? '#c0392b' : '#ffffff',
         weight: isDrawFrom ? 3 : 2,
         fillColor: r.color || DEFAULT_REGARD_COLOR,
-        fillOpacity: 0.95
+        fillOpacity: 0.95,
+        interactive: false // la zone tactile réelle est la touchTarget invisible ci-dessous
+      }).addTo(fullMapMarkerLayer);
+
+      // Zone tactile invisible mais bien plus grande que le point visuel (8-10px) :
+      // un point de cette taille est trop petit pour un appui long fiable au doigt sur
+      // mobile (cible tactile recommandée : ~40px). On capte donc la pression longue ici.
+      const touchTarget = L.circleMarker([r.lat, r.lon], {
+        radius: 22, color: 'transparent', fillColor: '#000000', fillOpacity: 0, weight: 0
       }).addTo(fullMapMarkerLayer);
 
       const label = L.marker([r.lat, r.lon], {
@@ -696,7 +750,7 @@
         interactive: false
       }).addTo(fullMapMarkerLayer);
 
-      bindLongPress(marker, () => openEditRegardModal(r.id), () => {
+      bindLongPress(touchTarget, () => openEditRegardModal(r.id), () => {
         if (drawMode) handleRegardTapInDrawMode(r.id);
         else if (moveRegardMode) confirmMoveRegard(r.lat, r.lon); // déplace sur un autre regard = superposition possible mais autorisée si voulu
       });
@@ -711,9 +765,15 @@
 
       const condColor = c.color || DEFAULT_COND_COLOR;
       const line = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], {
-        color: condColor, weight: 4
+        color: condColor, weight: 4, interactive: false
       }).addTo(fullMapLineLayer);
-      bindLongPress(line, () => openEditCollecteurModal(c.id));
+
+      // Zone tactile invisible mais bien plus large (20px) que le trait visuel (4px) :
+      // un trait aussi fin est très difficile à viser précisément au doigt sur mobile.
+      const lineTouchTarget = L.polyline([[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]], {
+        color: '#000000', opacity: 0, weight: 20
+      }).addTo(fullMapLineLayer);
+      bindLongPress(lineTouchTarget, () => openEditCollecteurModal(c.id));
 
       // Triangle indiquant le sens d'écoulement (départ -> arrivée), au milieu du tracé.
       // Le triangle CSS (border-top) pointe vers le bas par défaut (angle visuel 0° = bas),
