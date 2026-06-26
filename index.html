@@ -148,7 +148,7 @@
   #fullMapTopBar {
     position: absolute; top: 0; left: 0; right: 0; z-index: 2001;
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 8px 10px; background: rgba(11, 31, 23, 0.85); backdrop-filter: blur(4px);
+    padding: 8px 10px; background: rgba(8, 24, 17, 0.92);
   }
   #fullMapTopBar .title { color: white; font-weight: 700; font-size: 12.5px; line-height: 1.2; }
   #fullMapTopBar .count { color: #cfe8da; font-size: 10.5px; margin-top: 1px; }
@@ -185,7 +185,7 @@
   #fullMapBottomBar {
     position: absolute; bottom: 0; left: 0; right: 0; z-index: 2001;
     padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: rgba(11, 31, 23, 0.88); backdrop-filter: blur(4px);
+    background: rgba(8, 24, 17, 0.94);
     display: flex; flex-direction: column; align-items: stretch; gap: 5px;
   }
   .bottom-bar-row { display: flex; gap: 8px; align-items: stretch; }
@@ -196,25 +196,45 @@
   .draw-mode-btn.active { background: #c0392b; }
   .draw-mode-hint { color: #cfe8da; font-size: 12px; text-align: center; min-height: 14px; }
 
-  /* Étiquettes texte sur les points/lignes de la carte */
+  /* Étiquette de nom sur la carte réduite (aperçu en haut de page, lecture seule) */
   .map-label-regard {
     background: rgba(11,31,23,0.85); color: white; font-weight: 700; font-size: 12px;
     padding: 1px 6px; border-radius: 5px; white-space: nowrap; border: none !important;
     box-shadow: none !important;
   }
   .map-label-regard::before { display: none; }
-  .map-label-cond {
+
+  /* Icône combinée d'un collecteur : flèche de sens d'écoulement + étiquette de nom,
+     en un seul élément DOM (voir buildCollecteurIcon en JS). */
+  .cond-icon { background: transparent; border: none; }
+  .cond-icon-wrap { position: relative; width: 14px; height: 12px; }
+  .cond-icon-arrow {
+    width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
+    border-top: 12px solid; /* couleur définie inline (couleur du collecteur) */
+  }
+  .cond-icon-label {
+    position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
     background: rgba(45,106,79,0.92); color: white; font-weight: 700; font-size: 11.5px;
-    padding: 1px 6px; border-radius: 5px; white-space: nowrap; border: none !important;
-    box-shadow: none !important;
+    padding: 1px 6px; border-radius: 5px; white-space: nowrap;
   }
 
-  /* Zone tactile invisible (44x44, recommandation taille cible tactile) superposée à
-     chaque point de regard, pour fiabiliser la pression longue sur mobile. */
-  .touch-target-point {
-    width: 44px; height: 44px; border-radius: 50%; background: transparent;
+  /* Icône combinée d'un regard : point coloré + étiquette de nom, en un seul élément
+     DOM (voir buildRegardIcon en JS) au lieu de plusieurs calques séparés — bien plus
+     léger à repositionner pour Leaflet pendant le glissement (pan) de la carte. */
+  .regard-icon { background: transparent; border: none; }
+  .regard-icon-touch {
+    position: relative; width: 44px; height: 44px; display: flex;
+    align-items: center; justify-content: center;
   }
-  .map-label-cond::before { display: none; }
+  .regard-icon-dot {
+    border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    flex-shrink: 0;
+  }
+  .regard-icon-label {
+    position: absolute; left: 26px; top: 50%; transform: translateY(-50%);
+    background: rgba(11,31,23,0.85); color: white; font-weight: 700; font-size: 12px;
+    padding: 1px 6px; border-radius: 5px; white-space: nowrap;
+  }
 
   /* Fiches de saisie rapide (modals) */
   .modal-backdrop {
@@ -763,6 +783,31 @@
   const regardLayerCache = new Map();   // id -> { marker, touchTarget, label }
   const condLayerCache = new Map();     // id -> { line, touchTarget, arrow, label }
 
+  // Icône combinée d'un regard : point coloré + étiquette de nom, en un seul élément
+  // DOM (au lieu de 3 calques séparés), avec une zone cliquable suffisamment grande
+  // (44px) pour un appui fiable au doigt sans agrandir le point visuel lui-même.
+  // Icône combinée d'un collecteur : flèche de sens d'écoulement + étiquette de nom,
+  // en un seul élément DOM, affichée au milieu du tracé.
+  function buildCollecteurIcon(color, name, angleDeg) {
+    const html =
+      '<div class="cond-icon-wrap">' +
+        '<div class="cond-icon-arrow" style="transform: rotate(' + angleDeg + 'deg); border-top-color:' + color + ';"></div>' +
+        '<div class="cond-icon-label">' + escapeHTML(name) + '</div>' +
+      '</div>';
+    return L.divIcon({ className: 'cond-icon', html, iconSize: [14, 12], iconAnchor: [7, 6] });
+  }
+
+  function buildRegardIcon(color, name, highlighted) {
+    const dotSize = highlighted ? 20 : 16;
+    const borderColor = highlighted ? '#c0392b' : '#ffffff';
+    const html =
+      '<div class="regard-icon-touch">' +
+        '<div class="regard-icon-dot" style="width:' + dotSize + 'px;height:' + dotSize + 'px;background:' + color + ';border-color:' + borderColor + ';"></div>' +
+        '<div class="regard-icon-label">' + escapeHTML(name) + '</div>' +
+      '</div>';
+    return L.divIcon({ className: 'regard-icon', html, iconSize: [44, 44], iconAnchor: [22, 22] });
+  }
+
   function renderFullMap() {
     if (!fullMap) return;
     const bounds = [];
@@ -776,64 +821,41 @@
       let entry = regardLayerCache.get(r.id);
 
       if (!entry) {
-        // Première fois qu'on voit ce regard : on crée ses calques une seule fois.
-        const marker = L.circleMarker([r.lat, r.lon], {
-          radius: 8, color: '#ffffff', weight: 2, fillColor: color, fillOpacity: 0.95,
-          interactive: false // la zone tactile réelle est la touchTarget invisible ci-dessous
-        }).addTo(fullMapMarkerLayer);
-
-        // Zone tactile invisible mais bien plus grande que le point visuel (8-10px) :
-        // un point de cette taille est trop petit pour un appui long fiable au doigt sur
-        // mobile (cible tactile recommandée : ~40px). On capte donc la pression longue ici.
-        // Un L.Marker (élément DOM HTML léger via divIcon) plutôt qu'un circleMarker SVG :
-        // plus simple à cibler de façon fiable avec les Pointer Events, et indépendant du
-        // mode de rendu (Canvas/SVG) choisi pour les points et traits visuels eux-mêmes.
-        const touchTarget = L.marker([r.lat, r.lon], {
-          icon: L.divIcon({ className: 'touch-target-point', html: '', iconSize: [44, 44], iconAnchor: [22, 22] }),
+        // Un seul L.Marker (divIcon) combine le point visuel + sa zone tactile + son
+        // étiquette de nom, au lieu de 3 calques séparés : moitié moins d'éléments DOM
+        // à repositionner par Leaflet à chaque frame de déplacement de la carte, ce qui
+        // est la cause principale du ralentissement au glissement (pan) constaté dès
+        // que la zone contient des points, même peu nombreux.
+        const marker = L.marker([r.lat, r.lon], {
+          icon: buildRegardIcon(color, r.name, false),
           keyboard: false
-        }).addTo(fullMapMarkerLayer);
-
-        const label = L.marker([r.lat, r.lon], {
-          icon: L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }),
-          interactive: false
         }).addTo(fullMapMarkerLayer);
 
         // bindLongPress n'est appelée qu'ICI, une seule fois par regard pour toute la
         // durée de vie de la carte (sauf suppression) : les écouteurs ne sont jamais dupliqués.
-        bindLongPress(touchTarget, () => openEditRegardModal(r.id), () => {
+        bindLongPress(marker, () => openEditRegardModal(r.id), () => {
           if (drawMode) handleRegardTapInDrawMode(r.id);
           else if (moveRegardMode) confirmMoveRegard(r.lat, r.lon);
         });
 
-        entry = { marker, touchTarget, label, lastLat: r.lat, lastLon: r.lon, lastColor: color, lastName: r.name };
+        entry = { marker, lastLat: r.lat, lastLon: r.lon, lastColor: color, lastName: r.name, lastHighlight: false };
         regardLayerCache.set(r.id, entry);
       } else {
         // Déjà existant : on met juste à jour position/couleur/nom si besoin, sans
         // recréer aucun calque ni aucun écouteur d'événement.
         if (entry.lastLat !== r.lat || entry.lastLon !== r.lon) {
-          const ll = [r.lat, r.lon];
-          entry.marker.setLatLng(ll);
-          entry.touchTarget.setLatLng(ll);
-          entry.label.setLatLng(ll);
+          entry.marker.setLatLng([r.lat, r.lon]);
           entry.lastLat = r.lat; entry.lastLon = r.lon;
-        }
-        if (entry.lastColor !== color) {
-          entry.marker.setStyle({ fillColor: color });
-          entry.lastColor = color;
-        }
-        if (entry.lastName !== r.name) {
-          entry.label.setIcon(L.divIcon({ className: 'map-label-regard', html: escapeHTML(r.name), iconSize: null, iconAnchor: [-10, 8] }));
-          entry.lastName = r.name;
         }
       }
 
-      // Surbrillance du regard de départ choisi pendant le dessin d'un collecteur :
-      // un simple changement de style, pas une recréation du calque.
-      entry.marker.setStyle({
-        radius: isDrawFrom ? 10 : 8,
-        color: isDrawFrom ? '#c0392b' : '#ffffff',
-        weight: isDrawFrom ? 3 : 2
-      });
+      // Surbrillance du regard de départ choisi pendant le dessin d'un collecteur, ou
+      // changement de couleur/nom : on régénère l'icône seulement si quelque chose a
+      // vraiment changé, jamais à chaque rendu.
+      if (entry.lastColor !== color || entry.lastName !== r.name || entry.lastHighlight !== isDrawFrom) {
+        entry.marker.setIcon(buildRegardIcon(color, r.name, isDrawFrom));
+        entry.lastColor = color; entry.lastName = r.name; entry.lastHighlight = isDrawFrom;
+      }
 
       bounds.push([r.lat, r.lon]);
     });
@@ -843,8 +865,6 @@
     for (const [id, entry] of regardLayerCache) {
       if (!seenRegardIds.has(id)) {
         fullMapMarkerLayer.removeLayer(entry.marker);
-        fullMapMarkerLayer.removeLayer(entry.touchTarget);
-        fullMapMarkerLayer.removeLayer(entry.label);
         regardLayerCache.delete(id);
       }
     }
@@ -863,7 +883,6 @@
       // alors que atan2 calcule un angle où 0° = nord/haut : on ajoute donc 180° pour aligner
       // la pointe du triangle sur la direction réelle départ -> arrivée.
       const angleDeg = Math.atan2(rTo.lon - rFrom.lon, rTo.lat - rFrom.lat) * 180 / Math.PI + 180;
-      const arrowHtml = '<div style="transform: rotate(' + angleDeg + 'deg); width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid ' + condColor + ';"></div>';
 
       let entry = condLayerCache.get(c.id);
 
@@ -881,13 +900,11 @@
           color: '#000000', opacity: 0, weight: 20, renderer: fullMapSvgRenderer
         }).addTo(fullMapLineLayer);
 
-        const arrow = L.marker([midLat, midLon], {
-          icon: L.divIcon({ className: 'flow-arrow-icon', html: arrowHtml, iconSize: [14, 12], iconAnchor: [7, 6] }),
-          interactive: false
-        }).addTo(fullMapLineLayer);
-
-        const label = L.marker([midLat, midLon], {
-          icon: L.divIcon({ className: 'map-label-cond', html: escapeHTML(c.name), iconSize: null, iconAnchor: [-12, -6] }),
+        // Flèche de sens d'écoulement + étiquette de nom combinées en un seul élément
+        // DOM (au lieu de deux calques séparés), pour la même raison de performance
+        // que pour les regards : moins d'éléments à repositionner pendant le glissement.
+        const marker = L.marker([midLat, midLon], {
+          icon: buildCollecteurIcon(condColor, c.name, angleDeg),
           interactive: false
         }).addTo(fullMapLineLayer);
 
@@ -896,9 +913,9 @@
         bindLongPress(touchTarget, () => openEditCollecteurModal(c.id));
 
         entry = {
-          line, touchTarget, arrow, label,
+          line, touchTarget, marker,
           lastFromLat: rFrom.lat, lastFromLon: rFrom.lon, lastToLat: rTo.lat, lastToLon: rTo.lon,
-          lastColor: condColor, lastName: c.name
+          lastColor: condColor, lastName: c.name, lastAngle: angleDeg
         };
         condLayerCache.set(c.id, entry);
       } else {
@@ -908,20 +925,20 @@
           const latlngs = [[rFrom.lat, rFrom.lon], [rTo.lat, rTo.lon]];
           entry.line.setLatLngs(latlngs);
           entry.touchTarget.setLatLngs(latlngs);
-          entry.arrow.setLatLng([midLat, midLon]);
-          entry.label.setLatLng([midLat, midLon]);
+          entry.marker.setLatLng([midLat, midLon]);
           entry.lastFromLat = rFrom.lat; entry.lastFromLon = rFrom.lon;
           entry.lastToLat = rTo.lat; entry.lastToLon = rTo.lon;
         }
-        if (entry.lastColor !== condColor || positionChanged) {
+        const angleChanged = entry.lastAngle !== angleDeg;
+        if (entry.lastColor !== condColor || angleChanged) {
           entry.line.setStyle({ color: condColor });
-          entry.arrow.setIcon(L.divIcon({ className: 'flow-arrow-icon', html: arrowHtml, iconSize: [14, 12], iconAnchor: [7, 6] }));
           entry.lastColor = condColor;
+          entry.lastAngle = angleDeg;
+          entry.marker.setIcon(buildCollecteurIcon(condColor, c.name, angleDeg));
+        } else if (entry.lastName !== c.name) {
+          entry.marker.setIcon(buildCollecteurIcon(condColor, c.name, angleDeg));
         }
-        if (entry.lastName !== c.name) {
-          entry.label.setIcon(L.divIcon({ className: 'map-label-cond', html: escapeHTML(c.name), iconSize: null, iconAnchor: [-12, -6] }));
-          entry.lastName = c.name;
-        }
+        entry.lastName = c.name;
       }
     });
 
@@ -930,8 +947,7 @@
       if (!seenCondIds.has(id)) {
         fullMapLineLayer.removeLayer(entry.line);
         fullMapLineLayer.removeLayer(entry.touchTarget);
-        fullMapLineLayer.removeLayer(entry.arrow);
-        fullMapLineLayer.removeLayer(entry.label);
+        fullMapLineLayer.removeLayer(entry.marker);
         condLayerCache.delete(id);
       }
     }
