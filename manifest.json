@@ -2,10 +2,9 @@
   "name": "Diagnostic Réseau d'Assainissement",
   "short_name": "Assainissement",
   "description": "Levé terrain du réseau d'assainissement — regards et collecteurs, export KML",
-  "start_url": "./index.html",
-  "scope": "./",
+  "start_url": "/ahmed.github.io/index.html",
+  "scope": "/ahmed.github.io/",
   "display": "standalone",
-  "display_override": ["fullscreen", "standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#0b1f17",
   "theme_color": "#2d6a4f",
@@ -33,14 +32,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "form_factor": "narrow"
     }
   ]
 }
