@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Diagnostic Réseau d'Assainissement</title>
+
+<!-- PWA : permet d'installer cette page comme une app à part entière (icône sur
+     l'écran d'accueil, sans barre de navigateur), en utilisant directement le
+     moteur de rendu de Chrome/Brave — bien plus fluide que tout WebView intégré
+     dans une app générée par un convertisseur (WebIntoApp, Appilix, Median.co…). -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2d6a4f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Assainissement">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <style>
   :root {
@@ -144,7 +158,24 @@
     display: none; position: fixed; inset: 0; z-index: 2000; background: #0b1f17;
   }
   #fullMapOverlay.open { display: block; }
-  #fullMapOverlay #fullMap { position: absolute; inset: 0; }
+  /* Force la mise en couche GPU (compositing) de la carte. Certains WebView Android
+     embarqués dans des apps (contrairement à Chrome lui-même) n'activent pas le GPU
+     Raster par défaut, ce qui rend tout le glissement (pan) — y compris les tuiles de
+     fond satellite — lent et saccadé. translateZ(0)/will-change forcent le navigateur
+     à composer cet élément sur sa propre couche GPU plutôt que de le redessiner au CPU
+     à chaque frame. */
+  #fullMapOverlay #fullMap {
+    position: absolute; inset: 0;
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+  #fullMapOverlay #fullMap .leaflet-tile,
+  #fullMapOverlay #fullMap .leaflet-marker-icon,
+  #fullMapOverlay #fullMap .leaflet-zoom-animated {
+    transform: translateZ(0);
+    will-change: transform;
+  }
   #fullMapTopBar {
     position: absolute; top: 0; left: 0; right: 0; z-index: 2001;
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -539,6 +570,14 @@
     renderAll();
     checkOAuthRedirectResult();
   });
+
+  // Enregistrement du Service Worker, requis pour que Chrome/Brave proposent
+  // l'installation de cette page comme PWA (icône sur l'écran d'accueil).
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service Worker non enregistré', e));
+    });
+  }
 
   function addBaseLayers(targetMap) {
     // Fond satellite Google — imagerie généralement plus récente et plus détaillée
