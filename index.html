@@ -1648,7 +1648,10 @@
   }
 
   function exportKML() {
-    if (regards.length === 0) { alert('Aucune donnée à exporter encore.'); return; }
+    if (regards.length === 0) {
+      setExportStatus('Aucune donnée à exporter encore : ajoutez au moins un regard.', 'err');
+      return;
+    }
     const kml = buildKMLString();
     const filename = 'diagnostic-assainissement-' + new Date().toISOString().slice(0,10) + '.kml';
     downloadFile(kml, filename, 'application/vnd.google-earth.kml+xml');
@@ -1855,7 +1858,36 @@
   // On utilise donc en priorité une data: URI, beaucoup mieux supportée dans ce contexte,
   // avec, en repli, l'ouverture du contenu dans un nouvel onglet/fenêtre que l'utilisateur
   // pourra enregistrer manuellement (Partager / Enregistrer sous).
+  // Téléchargement de fichier, compatible WebView d'application (WebIntoApp, Appilix, etc.)
+  // Les WebViews embarqués dans les apps générées varient énormément dans ce qu'ils
+  // autorisent : certains bloquent les Blob URLs, d'autres bloquent les data: URIs sur
+  // <a download>. On essaie donc plusieurs méthodes dans l'ordre, et on s'arrête à la
+  // première qui ne lève pas d'exception, tout en gardant une trace de ce qui a été
+  // essayé pour pouvoir diagnostiquer précisément si aucune ne fonctionne.
   function downloadFile(content, filename, mimeType) {
+    const attempts = [];
+
+    // Méthode 1 : Blob + URL.createObjectURL — généralement la plus fiable et la plus
+    // standard dans les navigateurs et WebViews récents.
+    try {
+      const blob = new Blob([content], { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+      setExportStatus('Fichier "' + filename + '" téléchargé (méthode Blob). S\'il n\'apparaît pas, vérifiez le dossier "Téléchargements" de l\'appareil.', 'ok');
+      return;
+    } catch (e) {
+      attempts.push('Blob: ' + e.message);
+      console.error('Méthode Blob échouée', e);
+    }
+
+    // Méthode 2 : data: URI — repli si Blob est bloqué.
     try {
       const dataUri = 'data:' + mimeType + ';charset=utf-8,' + encodeURIComponent(content);
       const a = document.createElement('a');
@@ -1865,27 +1897,32 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setExportStatus('Fichier "' + filename + '" téléchargé. S\'il n\'apparaît pas, vérifiez le dossier "Téléchargements" de l\'appareil, ou utilisez le bouton "Ouvrir / Partager" ci-dessous.', 'ok');
+      setExportStatus('Fichier "' + filename + '" téléchargé (méthode alternative). S\'il n\'apparaît pas, utilisez le bouton ci-dessous.', 'ok');
+      return;
     } catch (e) {
-      console.error('Téléchargement direct impossible', e);
-      openFileFallback(content, mimeType);
+      attempts.push('data-uri: ' + e.message);
+      console.error('Méthode data: URI échouée', e);
     }
+
+    // Méthode 3 (dernier recours) : ouvrir dans un nouvel onglet/fenêtre, l'utilisateur
+    // utilise alors le menu natif "Partager"/"Enregistrer" du navigateur ou de l'app.
+    openFileFallback(content, mimeType, attempts);
   }
 
   // Ouvre le contenu dans une nouvelle fenêtre/onglet (data: URI) afin que l'utilisateur
   // puisse utiliser le menu natif "Partager" / "Enregistrer" du navigateur ou de l'app.
-  function openFileFallback(content, mimeType) {
+  function openFileFallback(content, mimeType, previousAttempts) {
     try {
       const dataUri = 'data:' + mimeType + ';charset=utf-8,' + encodeURIComponent(content);
       const win = window.open(dataUri, '_blank');
       if (!win) {
-        setExportStatus('Le téléchargement automatique a échoué et les fenêtres pop-up semblent bloquées. Copiez le contenu KML manuellement si besoin.', 'err');
+        setExportStatus('Le téléchargement automatique a échoué dans cette application (fenêtres pop-up bloquées). Essayez d\'ouvrir cette page dans Chrome/Safari plutôt que dans l\'application installée.', 'err');
       } else {
         setExportStatus('Le fichier s\'est ouvert dans un nouvel onglet : utilisez "Partager" ou "Enregistrer sous" pour le sauvegarder.', 'ok');
       }
     } catch (e2) {
-      console.error('Repli ouverture fichier impossible', e2);
-      setExportStatus('Impossible de générer le téléchargement dans cet environnement. Essayez d\'ouvrir cette page dans un navigateur classique (Chrome/Safari) plutôt que dans l\'application.', 'err');
+      console.error('Repli ouverture fichier impossible', e2, previousAttempts);
+      setExportStatus('Le téléchargement ne fonctionne pas dans cette application. Essayez d\'ouvrir cette page dans Chrome/Safari plutôt que dans l\'application installée — le téléchargement de fichiers y est mieux supporté.', 'err');
     }
   }
 
