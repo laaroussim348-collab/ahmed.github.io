@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>Diagnostic Réseau d'Assainissement</title>
 
 <!-- PWA : permet d'installer cette page comme une app à part entière (icône sur
@@ -179,7 +179,8 @@
   #fullMapTopBar {
     position: absolute; top: 0; left: 0; right: 0; z-index: 2001;
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 8px 10px; background: rgba(8, 24, 17, 0.92);
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 8px;
+    background: rgba(8, 24, 17, 0.92);
   }
   #fullMapTopBar .title { color: white; font-weight: 700; font-size: 12.5px; line-height: 1.2; }
   #fullMapTopBar .count { color: #cfe8da; font-size: 10.5px; margin-top: 1px; }
