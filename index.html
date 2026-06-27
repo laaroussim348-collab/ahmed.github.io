@@ -574,9 +574,23 @@
 
   // Enregistrement du Service Worker, requis pour que Chrome/Brave proposent
   // l'installation de cette page comme PWA (icône sur l'écran d'accueil).
+  // On commence par désinscrire toute ancienne version (ex: une version précédente
+  // avec un fetch handler buggé qui causait l'écran "Hors connexion" au premier
+  // lancement) : un Service Worker déjà actif ne se remplace pas automatiquement
+  // juste parce que le fichier a changé sur le serveur, il faut explicitement le
+  // désinscrire. On enregistre ensuite sw-v2.js (nom différent de sw.js) pour que
+  // le navigateur le traite sans ambiguïté comme un nouveau Service Worker.
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service Worker non enregistré', e));
+    window.addEventListener('load', async () => {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const reg of regs) {
+          await reg.unregister();
+        }
+      } catch (e) {
+        console.warn('Nettoyage des anciens Service Workers impossible', e);
+      }
+      navigator.serviceWorker.register('sw-v2.js').catch(e => console.warn('Service Worker non enregistré', e));
     });
   }
 
