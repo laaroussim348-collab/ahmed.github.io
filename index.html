@@ -10,12 +10,9 @@
      moteur de rendu de Chrome/Brave — bien plus fluide que tout WebView intégré
      dans une app générée par un convertisseur (WebIntoApp, Appilix, Median.co…). -->
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
-<link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
 <meta name="theme-color" content="#2d6a4f">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="application-name" content="Assainissement">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Assainissement">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -178,6 +175,38 @@
   #fullMapOverlay #fullMap .leaflet-zoom-animated {
     transform: translateZ(0);
     will-change: transform;
+  }
+
+  /* WebView Android Go : forcer GPU sur TOUS les éléments Leaflet pour un pan fluide */
+  .leaflet-tile-container,
+  .leaflet-tile-pane,
+  .leaflet-map-pane,
+  .leaflet-overlay-pane,
+  .leaflet-marker-pane,
+  .leaflet-shadow-pane,
+  .leaflet-pane,
+  .leaflet-layer {
+    transform: translateZ(0) !important;
+    will-change: transform !important;
+    backface-visibility: hidden !important;
+    -webkit-backface-visibility: hidden !important;
+  }
+  .leaflet-tile {
+    transform: translateZ(0) !important;
+    will-change: transform !important;
+    image-rendering: auto !important;
+    -webkit-transform: translateZ(0) !important;
+  }
+  /* Désactiver les transitions pendant le pan pour éviter le lag */
+  .leaflet-pan-anim .leaflet-tile {
+    transition: none !important;
+    -webkit-transition: none !important;
+  }
+  /* Couche canvas GPU */
+  .leaflet-canvas-layer,
+  canvas {
+    transform: translateZ(0) !important;
+    will-change: transform !important;
   }
   #fullMapTopBar {
     position: absolute; top: 0; left: 0; right: 0; z-index: 2001;
@@ -548,7 +577,37 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
-  // ----- State -----
+  // ----- WebView GPU Boost : force le compositing GPU sur tous les éléments Leaflet -----
+  // Sur Android Go WebView, le GPU raster n'est pas activé par défaut. On force chaque
+  // élément de la carte sur sa propre couche GPU dès l'ouverture, et à chaque ajout de
+  // tuile, pour éliminer le pan saccadé.
+  function applyWebViewGpuBoost() {
+    const selectors = [
+      '.leaflet-map-pane', '.leaflet-tile-pane', '.leaflet-overlay-pane',
+      '.leaflet-marker-pane', '.leaflet-pane', '.leaflet-layer',
+      '.leaflet-tile-container', '.leaflet-tile', 'canvas'
+    ];
+    selectors.forEach(sel => {
+      document.querySelectorAll('#fullMap ' + sel).forEach(el => {
+        el.style.transform = 'translateZ(0)';
+        el.style.willChange = 'transform';
+        el.style.backfaceVisibility = 'hidden';
+        el.style.webkitBackfaceVisibility = 'hidden';
+      });
+    });
+  }
+
+  // Ré-applique le boost à chaque chargement de tuile (nouvelles tuiles = nouveaux éléments DOM)
+  function setupTileGpuBoost(targetMap) {
+    targetMap.on('tileload', () => {
+      requestAnimationFrame(applyWebViewGpuBoost);
+    });
+    targetMap.on('moveend zoomend', () => {
+      requestAnimationFrame(applyWebViewGpuBoost);
+    });
+  }
+
+
   let regards = [];
   let conduites = [];
   let map, markerLayerGroup, lineLayerGroup;
@@ -674,11 +733,26 @@
   function openFullMap() {
     document.getElementById('fullMapOverlay').classList.add('open');
     if (!fullMap) {
-      fullMap = L.map('fullMap', { zoomControl: true, maxZoom: 21, preferCanvas: true }).setView([31.7, -7.0], 6);
+      fullMap = L.map('fullMap', {
+        zoomControl: true,
+        maxZoom: 21,
+        preferCanvas: true,
+        zoomAnimation: false,
+        markerZoomAnimation: false,
+        fadeAnimation: false,
+        inertia: true,
+        inertiaDeceleration: 2000,
+        inertiaMaxSpeed: 1500,
+        tap: true,
+        tapTolerance: 15,
+        touchZoom: true,
+        bounceAtZoomLimits: false
+      }).setView([31.7, -7.0], 6);
       fullMapSvgRenderer = L.svg().addTo(fullMap);
       addBaseLayers(fullMap);
       fullMapLineLayer = L.layerGroup().addTo(fullMap);
       fullMapMarkerLayer = L.layerGroup().addTo(fullMap);
+      setupTileGpuBoost(fullMap);
 
       // Tap simple sur le fond de carte (pas sur un marqueur) = nouveau regard à cet endroit,
       // sauf si on est en plein dessin de collecteur (on doit alors taper sur des regards
@@ -696,7 +770,7 @@
         openRegardModalForNewPoint(e.latlng.lat, e.latlng.lng);
       });
     }
-    setTimeout(() => { fullMap.invalidateSize(); renderFullMap(); }, 50);
+    setTimeout(() => { fullMap.invalidateSize(); renderFullMap(); applyWebViewGpuBoost(); }, 50);
   }
 
   function closeFullMap() {
