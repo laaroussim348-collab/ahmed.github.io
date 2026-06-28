@@ -558,6 +558,23 @@
   </div>
 </div>
 
+<!-- Boîte de confirmation maison (remplace window.confirm()) : indispensable car
+     Chrome quitte automatiquement le mode plein écran natif dès qu'une boîte de
+     dialogue système (confirm/alert/prompt) s'affiche — un comportement de sécurité
+     volontaire et permanent du navigateur, pas un bug qu'on peut contourner en
+     gardant confirm(). Cette fiche HTML classique reste, elle, à l'intérieur du
+     plein écran. -->
+<div class="modal-backdrop" id="customConfirmModal">
+  <div class="modal-sheet" id="customConfirmSheet">
+    <h3 id="customConfirmTitle">Confirmer</h3>
+    <p class="hint" id="customConfirmMessage" style="white-space: pre-line;"></p>
+    <div class="modal-actions">
+      <button class="btn-outline" id="customConfirmCancelBtn">Annuler</button>
+      <button class="btn-outline-danger" id="customConfirmOkBtn">Confirmer</button>
+    </div>
+  </div>
+</div>
+
 <footer>Les données sont sauvegardées automatiquement sur cet appareil (mémoire locale du navigateur/de l'application). Si vous changez d'appareil ou désinstallez l'application, exportez le KML ou synchronisez avec Google Drive avant pour ne rien perdre.</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -810,6 +827,34 @@
     window.visualViewport.addEventListener('resize', adjustOpenModalForKeyboard);
     window.visualViewport.addEventListener('scroll', adjustOpenModalForKeyboard);
   }
+
+  // ----- Boîte de confirmation maison (remplace window.confirm()) -----
+  // Retourne une Promise<boolean>, exactement comme on utiliserait confirm() de façon
+  // synchrone : `if (!(await customConfirm('...'))) return;`. Un seul dialogue à la
+  // fois (pas de file d'attente) : suffisant ici car l'app n'enchaîne jamais deux
+  // confirmations à la suite.
+  let _customConfirmResolve = null;
+  function customConfirm(message, okLabel) {
+    return new Promise((resolve) => {
+      _customConfirmResolve = resolve;
+      document.getElementById('customConfirmMessage').textContent = message;
+      document.getElementById('customConfirmOkBtn').textContent = okLabel || 'Confirmer';
+      document.getElementById('customConfirmModal').classList.add('open');
+    });
+  }
+  function _closeCustomConfirm(result) {
+    document.getElementById('customConfirmModal').classList.remove('open');
+    const resolve = _customConfirmResolve;
+    _customConfirmResolve = null;
+    if (resolve) resolve(result);
+  }
+  document.getElementById('customConfirmOkBtn').addEventListener('click', () => _closeCustomConfirm(true));
+  document.getElementById('customConfirmCancelBtn').addEventListener('click', () => _closeCustomConfirm(false));
+  // Cliquer sur le fond sombre équivaut à "Annuler" (comportement standard des
+  // autres fiches de l'app, ex: regardModal).
+  document.getElementById('customConfirmModal').addEventListener('click', (e) => {
+    if (e.target.id === 'customConfirmModal') _closeCustomConfirm(false);
+  });
 
   // Quand un champ texte de fiche reçoit le focus (clavier qui s'ouvre), on s'assure
   // aussi qu'il défile bien dans le champ visible une fois le clavier déployé —
@@ -1444,7 +1489,7 @@
     const usedIn = conduites.filter(c => c.from === id || c.to === id);
     let msg = 'Supprimer ce regard ?';
     if (usedIn.length > 0) msg += ' ' + usedIn.length + ' collecteur(s) lié(s) seront aussi supprimés.';
-    if (!confirm(msg)) return;
+    if (!await customConfirm(msg, 'Supprimer')) return;
     regards = regards.filter(r => r.id !== id);
     conduites = conduites.filter(c => c.from !== id && c.to !== id);
     await saveData();
@@ -1554,7 +1599,7 @@
   async function confirmDeleteCollecteurFromEdit() {
     const id = editingCollecteurId;
     if (!id) return;
-    if (!confirm('Supprimer ce collecteur ?')) return;
+    if (!await customConfirm('Supprimer ce collecteur ?', 'Supprimer')) return;
     conduites = conduites.filter(c => c.id !== id);
     await saveData();
     closeEditCollecteurModal();
@@ -1576,7 +1621,7 @@
           return;
         }
         const merge = regards.length > 0 || conduites.length > 0
-          ? confirm('Remplacer les données actuelles (' + regards.length + ' regard(s), ' + conduites.length + ' collecteur(s)) par celles du fichier importé ?\n\nAnnuler = fusionner à la place (ajouter sans supprimer l\'existant).')
+          ? await customConfirm('Remplacer les données actuelles (' + regards.length + ' regard(s), ' + conduites.length + ' collecteur(s)) par celles du fichier importé ?\n\nAnnuler = fusionner à la place (ajouter sans supprimer l\'existant).', 'Remplacer')
           : true;
 
         if (merge) {
@@ -1743,7 +1788,7 @@
     const usedIn = conduites.filter(c => c.from === id || c.to === id);
     let msg = 'Supprimer ce regard ?';
     if (usedIn.length > 0) msg += ' ' + usedIn.length + ' collecteur(s) lié(s) seront aussi supprimés.';
-    if (!confirm(msg)) return;
+    if (!await customConfirm(msg, 'Supprimer')) return;
     regards = regards.filter(r => r.id !== id);
     conduites = conduites.filter(c => c.from !== id && c.to !== id);
     await saveData();
@@ -1751,7 +1796,7 @@
   }
 
   async function quickDeleteCollecteur(id) {
-    if (!confirm('Supprimer ce collecteur ?')) return;
+    if (!await customConfirm('Supprimer ce collecteur ?', 'Supprimer')) return;
     conduites = conduites.filter(c => c.id !== id);
     await saveData();
     renderAll();
@@ -2107,7 +2152,7 @@
   }
 
   async function resetAll() {
-    if (!confirm('Effacer toutes les données (regards et conduites) ? Cette action est irréversible.')) return;
+    if (!await customConfirm('Effacer toutes les données (regards et conduites) ? Cette action est irréversible.', 'Effacer')) return;
     regards = [];
     conduites = [];
     clearDraftPoint();
