@@ -189,6 +189,15 @@
     width: 30px; height: 30px; font-weight: 700; font-size: 14px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
   }
+  #fullMapFullscreenBtn {
+    background: rgba(255,255,255,0.18); color: white; border: none; border-radius: 50%;
+    width: 30px; height: 30px; font-weight: 700; font-size: 15px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; margin-left: auto;
+  }
+  /* Quand le mode plein écran natif est actif, le navigateur masque déjà sa barre
+     d'adresse et sa barre de navigation : on n'a alors plus besoin que de
+     env(safe-area-inset-top) tienne compte d'une encoche, ce padding reste donc
+     correct dans les deux cas (actif ou non). */
 
   /* Bouton "Ma position" : petit bouton compact à côté de "Dessiner un collecteur",
      plutôt qu'un gros bouton flottant séparé qui prenait trop de place. */
@@ -438,6 +447,7 @@
       <div class="title">Carte complète</div>
       <div class="count" id="fullMapCount">—</div>
     </div>
+    <button id="fullMapFullscreenBtn" onclick="toggleBrowserFullscreen()" aria-label="Plein écran" title="Masquer les barres du navigateur">⛶</button>
     <button id="fullMapCloseBtn" onclick="closeFullMap()" aria-label="Fermer">✕</button>
   </div>
   <div id="fullMap"></div>
@@ -670,6 +680,12 @@
 
   function openFullMap() {
     document.getElementById('fullMapOverlay').classList.add('open');
+    // Tente de passer en plein écran natif du navigateur (masque la barre d'adresse
+    // ET la barre de navigation système sur la plupart des Chrome Android). Doit être
+    // appelé directement depuis un geste utilisateur (le clic sur "Ouvrir la carte"),
+    // sinon le navigateur refuse silencieusement la demande. On ignore l'erreur si le
+    // plein écran est refusé/non supporté : la carte reste utilisable normalement.
+    requestBrowserFullscreen();
     if (!fullMap) {
       fullMap = L.map('fullMap', { zoomControl: true, maxZoom: 21, preferCanvas: true }).setView([31.7, -7.0], 6);
       fullMapSvgRenderer = L.svg().addTo(fullMap);
@@ -702,6 +718,54 @@
     stopMyLocationTracking();
     moveRegardMode = false;
     setDrawHint('');
+    exitBrowserFullscreen();
+  }
+
+  // ----- Plein écran natif du navigateur (Fullscreen API) -----
+  // But : masquer la barre d'adresse et la barre de navigation système de Chrome
+  // pendant l'utilisation de la carte, sans passer par l'installation d'une PWA
+  // (impossible sur certains téléphones/versions de Chrome où l'option "Installer"
+  // n'apparaît pas dans le menu, quelle que soit la qualité du manifest). C'est un
+  // mécanisme web standard indépendant de l'installabilité PWA : il fonctionne dans
+  // un simple onglet Chrome, tant que l'appel part d'un vrai geste utilisateur
+  // (clic sur un bouton), ce qui est le cas ici (bouton "Ouvrir la carte complète"
+  // et bouton ⛶ dédié).
+  function requestBrowserFullscreen() {
+    const el = document.documentElement;
+    const request = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+    if (request) {
+      request.call(el).catch(() => { /* refusé/non supporté : on continue sans plein écran natif */ });
+    }
+  }
+
+  function exitBrowserFullscreen() {
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+    if (!isFs) return;
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+    if (exit) {
+      exit.call(document).catch(() => { /* ignore */ });
+    }
+  }
+
+  function toggleBrowserFullscreen() {
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+    if (isFs) {
+      exitBrowserFullscreen();
+    } else {
+      requestBrowserFullscreen();
+    }
+  }
+
+  // Garde le bouton ⛶ synchronisé avec l'état réel (ex: si l'utilisateur quitte le
+  // plein écran avec le geste système Android plutôt qu'avec notre bouton).
+  document.addEventListener('fullscreenchange', updateFullscreenBtnIcon);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenBtnIcon);
+  function updateFullscreenBtnIcon() {
+    const btn = document.getElementById('fullMapFullscreenBtn');
+    if (!btn) return;
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+    btn.textContent = isFs ? '⛶' : '⛶';
+    btn.title = isFs ? 'Quitter le plein écran' : 'Masquer les barres du navigateur';
   }
 
   function toggleDrawMode() {
