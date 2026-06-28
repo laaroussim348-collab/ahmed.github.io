@@ -1315,6 +1315,13 @@
 
     myLocationWatchId = navigator.geolocation.watchPosition(
       (pos) => {
+        // La toute première réponse de watchPosition() arrive juste après que
+        // l'utilisateur a répondu à l'invite native d'autorisation GPS — invite qui,
+        // comme confirm()/alert(), fait quitter le plein écran à Chrome
+        // automatiquement. On retente donc le plein écran ici : à ce stade on est
+        // toujours dans la continuité du geste utilisateur (le tap sur 📍), donc
+        // Chrome accepte la demande sans la refuser pour absence de geste direct.
+        reassertFullscreenIfNeeded();
         const { latitude, longitude, accuracy } = pos.coords;
         updateMyLocationMarker(latitude, longitude, accuracy);
         // Comme Google Earth : on centre automatiquement la carte sur la première
@@ -1327,9 +1334,19 @@
         }
         setPosStatus('Position en direct — précision actuelle : ' + Math.round(accuracy) + ' m.', accuracy <= 30 ? 'ok' : '');
       },
-      (err) => setPosStatus(geoErrorHint(err), 'err'),
+      (err) => { reassertFullscreenIfNeeded(); setPosStatus(geoErrorHint(err), 'err'); },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
     );
+  }
+
+  // Repasse en plein écran natif si la carte complète est toujours ouverte mais que
+  // Chrome en est sorti tout seul (invite système GPS, confirm(), etc.). Inutile si
+  // on a déjà quitté la carte complète entre-temps (closeFullMap), ou si on y est
+  // déjà : requestFullscreen() ignore silencieusement un appel redondant.
+  function reassertFullscreenIfNeeded() {
+    const overlayOpen = document.getElementById('fullMapOverlay').classList.contains('open');
+    const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+    if (overlayOpen && !isFs) requestBrowserFullscreen();
   }
 
   function stopMyLocationTracking() {
