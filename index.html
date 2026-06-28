@@ -287,6 +287,13 @@
     background: var(--card-bg, #ffffff); width: 100%; max-width: 480px;
     border-radius: 16px 16px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
     box-shadow: 0 -4px 24px rgba(0,0,0,0.3);
+    /* max-height + overflow-y : quand le clavier virtuel Android réduit l'espace
+       visible réel (visualViewport), on recalcule cette valeur en JS (voir
+       adjustModalsForKeyboard ci-dessous) pour que la fiche tienne toujours dans
+       l'espace restant au-dessus du clavier, avec un défilement interne si besoin,
+       au lieu de déborder derrière le clavier comme avant. */
+    max-height: 90vh;
+    overflow-y: auto;
   }
   .modal-sheet h3 { margin: 0 0 12px 0; color: var(--manhole-deep); }
   .modal-actions { display: flex; gap: 10px; margin-top: 14px; }
@@ -466,11 +473,11 @@
   <div class="modal-sheet">
     <h3>Nouveau regard</h3>
     <label>N° de regard *</label>
-    <input id="modalRegardName" placeholder="ex: R1" autocomplete="off">
+    <input id="modalRegardName" placeholder="ex: R1" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="regard-numero-rgd1">
     <label>Couleur</label>
     <div class="color-picker" id="modalRegardColorPicker"></div>
     <label>État du regard</label>
-    <input id="modalRegardEtat" placeholder="ex: bon, fissuré, cassé...">
+    <input id="modalRegardEtat" placeholder="ex: bon, fissuré, cassé..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="regard-etat-rgd1">
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeRegardModal()">Annuler</button>
       <button class="btn-manhole" onclick="confirmAddRegard()">Enregistrer</button>
@@ -484,7 +491,7 @@
     <h3>Nouveau collecteur</h3>
     <p class="hint" id="collecteurModalSummary"></p>
     <label>N° de collecteur *</label>
-    <input id="modalCondName" placeholder="ex: C1" autocomplete="off">
+    <input id="modalCondName" placeholder="ex: C1" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="cond-numero-cnd1">
     <label>Couleur</label>
     <div class="color-picker" id="modalCondColorPicker"></div>
     <label>Diamètre</label>
@@ -509,11 +516,11 @@
   <div class="modal-sheet">
     <h3>Modifier le regard</h3>
     <label>N° de regard *</label>
-    <input id="editRegardName" placeholder="ex: R1" autocomplete="off">
+    <input id="editRegardName" placeholder="ex: R1" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="edit-regard-numero-rgd2">
     <label>Couleur</label>
     <div class="color-picker" id="editRegardColorPicker"></div>
     <label>État du regard</label>
-    <input id="editRegardEtat" placeholder="ex: bon, fissuré, cassé...">
+    <input id="editRegardEtat" placeholder="ex: bon, fissuré, cassé..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="edit-regard-etat-rgd2">
     <button class="btn-outline" id="moveRegardBtn" onclick="startMoveRegard()">📍 Déplacer ce point sur la carte</button>
     <div class="modal-actions">
       <button class="btn-outline-danger" onclick="confirmDeleteRegardFromEdit()">Supprimer</button>
@@ -527,7 +534,7 @@
   <div class="modal-sheet">
     <h3>Modifier le collecteur</h3>
     <label>N° de collecteur *</label>
-    <input id="editCondName" placeholder="ex: C1" autocomplete="off">
+    <input id="editCondName" placeholder="ex: C1" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="edit-cond-numero-cnd2">
     <label>Couleur</label>
     <div class="color-picker" id="editCondColorPicker"></div>
     <label>Regard de départ (sens d'écoulement)</label>
@@ -767,6 +774,54 @@
     btn.textContent = isFs ? '⛶' : '⛶';
     btn.title = isFs ? 'Quitter le plein écran' : 'Masquer les barres du navigateur';
   }
+
+  // ----- Fiches (modals) toujours visibles au-dessus du clavier virtuel -----
+  // Sur Android, le clavier réduit la fenêtre visuelle (visualViewport) mais PAS la
+  // fenêtre de mise en page (layout viewport) que `position: fixed` utilise par
+  // défaut : une fiche ancrée en bas avec `inset:0` reste donc calculée par rapport
+  // à la hauteur totale de l'écran, et se retrouve cachée derrière le clavier.
+  // window.visualViewport expose la hauteur réellement visible ; on l'utilise pour
+  // (1) limiter la hauteur de la fiche ouverte à cet espace réel et (2) la
+  // repositionner juste au-dessus du clavier au lieu de tout en bas de l'écran.
+  function adjustOpenModalForKeyboard() {
+    const openSheet = document.querySelector('.modal-backdrop.open .modal-sheet');
+    if (!openSheet) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    // Hauteur masquée par le clavier = différence entre la hauteur de mise en page
+    // (innerHeight, stable) et la hauteur visuelle réelle restante (vv.height).
+    const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    if (keyboardHeight > 80) {
+      // Clavier ouvert : on pousse la fiche juste au-dessus de lui et on limite sa
+      // hauteur à l'espace restant, avec défilement interne pour le contenu en trop
+      // (ex : le bouton "Enregistrer" reste atteignable même avec le clavier ouvert).
+      openSheet.style.position = 'fixed';
+      openSheet.style.bottom = keyboardHeight + 'px';
+      openSheet.style.maxHeight = (vv.height - 16) + 'px';
+    } else {
+      // Clavier fermé : on revient au comportement normal défini en CSS.
+      openSheet.style.position = '';
+      openSheet.style.bottom = '';
+      openSheet.style.maxHeight = '';
+    }
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', adjustOpenModalForKeyboard);
+    window.visualViewport.addEventListener('scroll', adjustOpenModalForKeyboard);
+  }
+
+  // Quand un champ texte de fiche reçoit le focus (clavier qui s'ouvre), on s'assure
+  // aussi qu'il défile bien dans le champ visible une fois le clavier déployé —
+  // léger délai car le clavier prend un instant à s'ouvrir sur Android.
+  document.addEventListener('focusin', (e) => {
+    if (e.target.matches('.modal-sheet input, .modal-sheet textarea, .modal-sheet select')) {
+      setTimeout(() => {
+        adjustOpenModalForKeyboard();
+        e.target.scrollIntoView({ block: 'nearest' });
+      }, 250);
+    }
+  });
 
   function toggleDrawMode() {
     if (drawMode) { exitDrawMode(); return; }
