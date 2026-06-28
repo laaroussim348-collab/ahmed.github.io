@@ -757,8 +757,21 @@
   function requestBrowserFullscreen() {
     const el = document.documentElement;
     const request = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
-    if (request) {
-      request.call(el).catch(() => { /* refusé/non supporté : on continue sans plein écran natif */ });
+    if (!request) {
+      setDrawHint('Plein écran non supporté par ce navigateur (API absente).');
+      return;
+    }
+    const result = request.call(el);
+    // request.call() peut renvoyer une Promise (API standard) ou rien du tout
+    // (anciens préfixes webkit/moz/ms) : on ne traite le diagnostic que si une
+    // vraie Promise est retournée.
+    if (result && typeof result.catch === 'function') {
+      result.catch((err) => {
+        // Affiché directement dans l'app (setDrawHint, déjà utilisé pour les
+        // messages de dessin de collecteur) pour diagnostiquer sans console
+        // de développeur, impossible à ouvrir sur un téléphone normal.
+        setDrawHint('Plein écran refusé : ' + (err && err.name ? err.name : '') + ' ' + (err && err.message ? err.message : String(err)));
+      });
     }
   }
 
