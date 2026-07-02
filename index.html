@@ -427,6 +427,7 @@
   <div class="card">
     <h2>Export</h2>
     <button class="btn-primary" onclick="exportKML()">Télécharger le fichier KML</button>
+    <button class="btn-outline" onclick="exportKML(true)">Ouvrir dans le navigateur (si le téléchargement ne se déclenche pas)</button>
     <div class="status-msg" id="exportStatus"></div>
     <p class="export-note">
       Ouvrez ce fichier dans Google Earth (Fichier > Ouvrir), ou déposez-le dans votre Google Drive pour le retrouver depuis Google Earth Web. Vous pourrez ensuite le convertir en DXF/DWG via QGIS ou AutoCAD Map 3D, comme on l'a vu précédemment.
@@ -1904,13 +1905,26 @@
       '  <Folder>\n    <name>Regards</name>\n';
 
     regards.forEach(r => {
-      const desc = 'Etat: ' + (r.etat || '-');
+      // On ajoute aussi, dans la description du regard lui-même, la liste des
+      // collecteurs qui y sont raccordés (nom + diamètre) : certains convertisseurs
+      // KML -> DXF (AutoCAD) n'exportent le texte QUE pour les Placemarks de type
+      // Point directement liés à une entité, donc dupliquer l'info ici garantit
+      // qu'elle reste visible à côté du regard même si le point d'étiquette du
+      // collecteur (au milieu du tracé) est filtré par la conversion.
+      const relatedConduites = conduites.filter(c => c.from === r.id || c.to === r.id);
+      let desc = 'Etat: ' + (r.etat || '-');
+      if (relatedConduites.length > 0) {
+        desc += '\nCollecteurs relies: ' + relatedConduites.map(c =>
+          c.name + ' (Ø' + (c.diameter || '-') + 'mm)'
+        ).join(', ');
+      }
       const kmlColor = hexToKmlColor(r.color || DEFAULT_REGARD_COLOR);
       // Style défini directement dans le Placemark (au lieu d'un styleUrl partagé) :
       // chaque regard garde ainsi SA propre couleur choisie dans l'app.
       kml += '    <Placemark>\n      <name>' + escapeXML(r.name) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
         '      <Style><IconStyle><color>' + kmlColor + '</color><scale>1.1</scale>' +
-        '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>\n' +
+        '<Icon><href>https://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>' +
+        '<LabelStyle><color>' + kmlColor + '</color></LabelStyle></Style>\n' +
         '      <Point><coordinates>' + r.lon + ',' + r.lat + ',0</coordinates></Point>\n    </Placemark>\n';
     });
 
@@ -1937,8 +1951,14 @@
       //    génèrent en général du texte que pour les Placemarks de type Point (comme
       //    les regards) ; une LineString seule n'exporte aucune étiquette visible,
       //    d'où l'absence du nom et du diamètre du collecteur une fois dans AutoCAD.
+      //    scale=0.01 était interprété par certains convertisseurs KML->DXF comme une
+      //    icône "invisible" et le Placemark entier (donc son texte) était ignoré ;
+      //    on utilise désormais une scale normale pour que le point (et son <name>)
+      //    soit bien exporté aussi vers AutoCAD.
       kml += '    <Placemark>\n      <name>' + escapeXML(c.name + ' (Ø' + diam + 'mm)') + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
-        '      <Style><IconStyle><color>' + kmlColor + '</color><scale>0.01</scale></IconStyle><LabelStyle><scale>0.9</scale></LabelStyle></Style>\n' +
+        '      <Style><IconStyle><color>' + kmlColor + '</color><scale>0.6</scale>' +
+        '<Icon><href>https://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>' +
+        '<LabelStyle><color>' + kmlColor + '</color><scale>0.9</scale></LabelStyle></Style>\n' +
         '      <Point><coordinates>' + midLon + ',' + midLat + ',0</coordinates></Point>\n    </Placemark>\n';
 
       // 3) Flèche de sens d'écoulement : dans l'app c'est un triangle CSS (HTML), qui
@@ -1946,9 +1966,12 @@
       //    remplace par une icône Point orientée (heading = cap géographique
       //    départ -> arrivée), rendue par Google Earth comme un triangle directionnel
       //    et qui, étant un Point comme les regards, survit aussi à un export DXF.
+      //    Le lien http:// (non sécurisé) était bloqué par Google Earth ouvert depuis
+      //    Drive dans un contexte https, ce qui faisait disparaître complètement la
+      //    flèche ; on utilise désormais https://.
       kml += '    <Placemark>\n      <name></name>\n' +
         '      <Style><IconStyle><color>' + kmlColor + '</color><scale>0.8</scale><heading>' + bearing.toFixed(1) + '</heading>' +
-        '<Icon><href>http://earth.google.com/images/kml-icons/track-directional/track-0.png</href></Icon></IconStyle></Style>\n' +
+        '<Icon><href>https://earth.google.com/images/kml-icons/track-directional/track-0.png</href></Icon></IconStyle></Style>\n' +
         '      <Point><coordinates>' + midLon + ',' + midLat + ',0</coordinates></Point>\n    </Placemark>\n';
     });
 
@@ -1956,13 +1979,17 @@
     return kml;
   }
 
-  function exportKML() {
+  function exportKML(forceOpenInBrowser) {
     if (regards.length === 0) {
       setExportStatus('Aucune donnée à exporter encore : ajoutez au moins un regard.', 'err');
       return;
     }
     const kml = buildKMLString();
     const filename = 'diagnostic-assainissement-' + new Date().toISOString().slice(0,10) + '.kml';
+    if (forceOpenInBrowser) {
+      openFileFallback(kml, 'application/vnd.google-earth.kml+xml', []);
+      return;
+    }
     downloadFile(kml, filename, 'application/vnd.google-earth.kml+xml');
   }
 
@@ -2176,6 +2203,19 @@
   function downloadFile(content, filename, mimeType) {
     const attempts = [];
 
+    // WebViews de type Appilix (et similaires) interceptent souvent les clics sur les
+    // liens <a download> / <a href="data:..."> et les redirigent vers leur propre
+    // gestionnaire de navigation externe au lieu de déclencher un téléchargement natif :
+    // aucune erreur JS n'est levée (donc les méthodes ci-dessous "réussissent" en
+    // apparence), mais rien n'est réellement enregistré sur l'appareil. Dans ce contexte
+    // précis, ouvrir directement le contenu avec window.open() est nettement plus fiable
+    // car Appilix route cet appel vers le navigateur système (Chrome/Safari), qui lui
+    // gère correctement les data: URIs et propose "Télécharger"/"Enregistrer sous".
+    if (isLikelyAppWebView()) {
+      openFileFallback(content, mimeType, attempts);
+      return;
+    }
+
     // Méthode 1 : Blob + URL.createObjectURL — généralement la plus fiable et la plus
     // standard dans les navigateurs et WebViews récents.
     try {
@@ -2189,7 +2229,7 @@
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-      setExportStatus('Fichier "' + filename + '" téléchargé (méthode Blob). S\'il n\'apparaît pas, vérifiez le dossier "Téléchargements" de l\'appareil.', 'ok');
+      setExportStatus('Fichier "' + filename + '" téléchargé (méthode Blob). S\'il n\'apparaît pas, vérifiez le dossier "Téléchargements" de l\'appareil. Si rien ne se passe, utilisez le bouton "Ouvrir dans le navigateur" ci-dessous.', 'ok');
       return;
     } catch (e) {
       attempts.push('Blob: ' + e.message);
@@ -2216,6 +2256,22 @@
     // Méthode 3 (dernier recours) : ouvrir dans un nouvel onglet/fenêtre, l'utilisateur
     // utilise alors le menu natif "Partager"/"Enregistrer" du navigateur ou de l'app.
     openFileFallback(content, mimeType, attempts);
+  }
+
+  // Détecte (au mieux) un WebView d'app générée (Appilix, WebIntoApp, Median.co...)
+  // afin d'adapter la stratégie de téléchargement : ces WebViews n'exposent pas
+  // toujours "wv" dans le user-agent comme les WebViews Android standards, donc on
+  // combine plusieurs indices.
+  function isLikelyAppWebView() {
+    try {
+      const ua = navigator.userAgent || '';
+      const isAndroidWebView = /; wv\)/.test(ua) || (/Android/.test(ua) && /Version\//.test(ua));
+      const isStandaloneIOS = window.navigator.standalone === true;
+      const isDisplayModeStandalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+      return isAndroidWebView || isStandaloneIOS || isDisplayModeStandalone;
+    } catch (e) {
+      return false;
+    }
   }
 
   // Ouvre le contenu dans une nouvelle fenêtre/onglet (data: URI) afin que l'utilisateur
