@@ -1985,46 +1985,70 @@
 
     kml += '  </Folder>\n  <Folder>\n    <name>Collecteurs</name>\n';
 
+    // Les Placemarks des lignes (LineString) vont dans ce Folder "Collecteurs".
     conduites.forEach(c => {
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
       if (!rFrom || !rTo) return;
       const diam = c.diameter || '-';
-      const desc = 'Sens: ' + rFrom.name + ' -> ' + rTo.name + '\nDiametre: ' + diam + ' mm';
+      // Description ramenée à UNE SEULE ligne : l'ancienne version mettait "Sens: ...
+      // \nDiametre: ..." sur deux lignes, mais le saut de ligne \n ne se convertit pas
+      // correctement lors de l'export KML -> DXF (AutoCAD) et les deux lignes se
+      // retrouvaient collées l'une à l'autre dans le texte affiché. Le nom du
+      // Placemark porte déjà "Collecteur (ØXXXmm)" donc la description n'a plus qu'à
+      // rappeler le sens, sur une seule ligne.
+      const desc = 'Sens: ' + rFrom.name + ' -> ' + rTo.name + ' | Diametre: ' + diam + ' mm';
       const hex = normColor(c.color, normColor(DEFAULT_COND_COLOR, '2d6a4f'));
       const lineId = lineStyleIds.get(hex);
-      const labelId = labelStyleIds.get(hex);
-      const arrowId = arrowStyleIds.get(hex);
-      const midLat = (rFrom.lat + rTo.lat) / 2, midLon = (rFrom.lon + rTo.lon) / 2;
-      const bearing = computeBearing(rFrom.lat, rFrom.lon, rTo.lat, rTo.lon);
 
-      // 1) Le tracé du collecteur lui-même, référencé vers le style partagé de sa couleur.
       kml += '    <Placemark>\n      <name>' + escapeXML(c.name) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
         '      <styleUrl>#' + lineId + '</styleUrl>\n' +
         '      <ExtendedData>\n        <Data name="Collecteur"><value>' + escapeXML(c.name) + '</value></Data>\n' +
         '        <Data name="Diametre_mm"><value>' + escapeXML(String(diam)) + '</value></Data>\n' +
         '        <Data name="Sens"><value>' + escapeXML(rFrom.name + ' -> ' + rTo.name) + '</value></Data>\n      </ExtendedData>\n' +
         '      <LineString><coordinates>' + rFrom.lon + ',' + rFrom.lat + ',0 ' + rTo.lon + ',' + rTo.lat + ',0</coordinates></LineString>\n    </Placemark>\n';
+    });
 
-      // 2) Point d'étiquette au milieu du tracé, portant le nom ET le diamètre dans le
-      //    <name> lui-même (visible dans Google Earth ET dans les convertisseurs KML ->
-      //    DXF, qui ne génèrent en général du texte que pour les Placemarks de type
-      //    Point — une LineString seule n'exporte aucune étiquette visible, d'où
-      //    l'absence du nom et du diamètre du collecteur une fois dans AutoCAD).
-      kml += '    <Placemark>\n      <name>' + escapeXML(c.name + ' (Ø' + diam + 'mm)') + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
+    // Les points d'étiquette (nom + diamètre) et les flèches de sens vont dans un
+    // Folder SÉPARÉ "Collecteurs_Labels" (et non plus mélangés avec les regards ou
+    // les lignes). En KML, chaque <Folder> devient en général un calque/layer distinct
+    // une fois converti en DXF pour AutoCAD : ces points restent donc facilement
+    // sélectionnables et supprimables d'un coup (ex. avec "sélection similaire") sans
+    // jamais entraîner les points des regards, qui gardent leur propre calque.
+    kml += '  </Folder>\n  <Folder>\n    <name>Collecteurs_Labels</name>\n';
+
+    conduites.forEach(c => {
+      const rFrom = regards.find(r => r.id === c.from);
+      const rTo = regards.find(r => r.id === c.to);
+      if (!rFrom || !rTo) return;
+      const diam = c.diameter || '-';
+      const hex = normColor(c.color, normColor(DEFAULT_COND_COLOR, '2d6a4f'));
+      const labelId = labelStyleIds.get(hex);
+      const arrowId = arrowStyleIds.get(hex);
+      const midLat = (rFrom.lat + rTo.lat) / 2, midLon = (rFrom.lon + rTo.lon) / 2;
+      const bearing = computeBearing(rFrom.lat, rFrom.lon, rTo.lat, rTo.lon);
+
+      // Point d'étiquette au milieu du tracé, portant le nom ET le diamètre dans le
+      //  <name> lui-même (visible dans Google Earth ET dans les convertisseurs KML ->
+      //  DXF, qui ne génèrent en général du texte que pour les Placemarks de type
+      //  Point — une LineString seule n'exporte aucune étiquette visible, d'où
+      //  l'absence du nom et du diamètre du collecteur une fois dans AutoCAD). Pas de
+      //  <description> ici : le nom seul ("C38 (Ø400mm)") suffit pour l'étiquette, la
+      //  description complète est déjà portée par le Placemark-ligne ci-dessus.
+      kml += '    <Placemark>\n      <name>' + escapeXML(c.name + ' (Ø' + diam + 'mm)') + '</name>\n' +
         '      <styleUrl>#' + labelId + '</styleUrl>\n' +
         '      <ExtendedData>\n        <Data name="Collecteur"><value>' + escapeXML(c.name) + '</value></Data>\n' +
         '        <Data name="Diametre_mm"><value>' + escapeXML(String(diam)) + '</value></Data>\n      </ExtendedData>\n' +
         '      <Point><coordinates>' + midLon + ',' + midLat + ',0</coordinates></Point>\n    </Placemark>\n';
 
-      // 3) Flèche de sens d'écoulement : dans l'app c'est un triangle CSS (HTML), qui
-      //    n'existe pas en KML et disparaissait donc totalement à l'export. On la
-      //    remplace par une icône Point orientée (heading = cap géographique départ ->
-      //    arrivée), rendue par Google Earth comme un triangle directionnel et qui,
-      //    étant un Point comme les regards, survit aussi à un export DXF. Le heading
-      //    varie à CHAQUE collecteur (contrairement à la couleur, commune à tous), il
-      //    ne peut donc pas être mis dans le style partagé : on garde un petit
-      //    <Style> inline pour lui seul, en plus du styleUrl qui apporte la couleur.
+      // Flèche de sens d'écoulement : dans l'app c'est un triangle CSS (HTML), qui
+      //  n'existe pas en KML et disparaissait donc totalement à l'export. On la
+      //  remplace par une icône Point orientée (heading = cap géographique départ ->
+      //  arrivée), rendue par Google Earth comme un triangle directionnel et qui,
+      //  étant un Point comme les regards, survit aussi à un export DXF. Le heading
+      //  varie à CHAQUE collecteur (contrairement à la couleur, commune à tous), il
+      //  ne peut donc pas être mis dans le style partagé : on garde un petit
+      //  <Style> inline pour lui seul, en plus du styleUrl qui apporte la couleur.
       kml += '    <Placemark>\n      <name></name>\n' +
         '      <styleUrl>#' + arrowId + '</styleUrl>\n' +
         '      <Style><IconStyle><heading>' + bearing.toFixed(1) + '</heading></IconStyle></Style>\n' +
