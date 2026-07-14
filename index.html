@@ -208,6 +208,16 @@
   }
   #myLocationBtn.tracking { background: #1a73e8; color: white; }
 
+  /* Bouton boussole "Nord" : même gabarit que #myLocationBtn (48x48, à côté de lui).
+     L'aiguille SVG à l'intérieur tourne en continu pour indiquer où se trouve le nord
+     réel pendant qu'on fait pivoter la carte (comme la boussole de Google Maps) ; un
+     appui la ramène animé à zéro, comme le bouton de réorientation de Google Earth. */
+  #northBtn {
+    flex: 0 0 48px; height: 48px; border-radius: 10px; border: none;
+    background: white; display: flex; align-items: center; justify-content: center;
+  }
+  #northNeedle { transition: transform 0.12s linear; }
+
   /* Point bleu pulsant représentant la position GPS en direct, comme sur Google Maps/Earth */
   .my-location-dot {
     width: 16px; height: 16px; border-radius: 50%;
@@ -427,6 +437,7 @@
   <div class="card">
     <h2>Export</h2>
     <button class="btn-primary" onclick="exportKML()">Télécharger le fichier KML</button>
+    <button class="btn-outline" onclick="exportKML(true)">Ouvrir dans le navigateur (si le téléchargement ne se déclenche pas)</button>
     <div class="status-msg" id="exportStatus"></div>
     <p class="export-note">
       Ouvrez ce fichier dans Google Earth (Fichier > Ouvrir), ou déposez-le dans votre Google Drive pour le retrouver depuis Google Earth Web. Vous pourrez ensuite le convertir en DXF/DWG via QGIS ou AutoCAD Map 3D, comme on l'a vu précédemment.
@@ -463,6 +474,12 @@
     <div class="bottom-bar-row">
       <button id="drawModeBtn" class="draw-mode-btn" onclick="toggleDrawMode()">✏️ Dessiner un collecteur</button>
       <button id="myLocationBtn" onclick="toggleMyLocationTracking()" title="Ma position">📍</button>
+      <button id="northBtn" onclick="resetMapNorth()" title="Réorienter vers le nord" aria-label="Réorienter vers le nord">
+        <svg id="northNeedle" viewBox="0 0 24 24" width="22" height="22">
+          <polygon points="12,2 16,12 8,12" fill="var(--manhole)"></polygon>
+          <polygon points="12,22 16,12 8,12" fill="#c9d3cd"></polygon>
+        </svg>
+      </button>
     </div>
     <div id="drawModeHint" class="draw-mode-hint"></div>
   </div>
@@ -578,6 +595,12 @@
 <footer>Les données sont sauvegardées automatiquement sur cet appareil (mémoire locale du navigateur/de l'application). Si vous changez d'appareil ou désinstallez l'application, exportez le KML ou synchronisez avec Google Drive avant pour ne rien perdre.</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<!-- leaflet-rotate (Raruto) : ajoute la rotation libre de la carte (2 doigts sur mobile,
+     Maj + glisser à la souris) ainsi qu'un "bearing" programmable, utilisés ci-dessous par
+     le nouveau bouton boussole "Nord" de la carte plein écran. Doit être chargé juste après
+     leaflet.js — la librairie se greffe sur l'objet L existant sans le remplacer.
+     Compatible Leaflet 1.9.x (celui utilisé ici). -->
+<script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js"></script>
 <script>
   // ----- State -----
   let regards = [];
@@ -711,7 +734,20 @@
     // plein écran est refusé/non supporté : la carte reste utilisable normalement.
     requestBrowserFullscreen();
     if (!fullMap) {
-      fullMap = L.map('fullMap', { zoomControl: true, maxZoom: 21, preferCanvas: true }).setView([31.7, -7.0], 6);
+      fullMap = L.map('fullMap', {
+        zoomControl: true,
+        maxZoom: 21,
+        preferCanvas: true,
+        // --- Rotation libre de la carte (leaflet-rotate) ---
+        // "rotate" doit impérativement être fourni ici, à la création de la carte : le
+        // définir après coup (map.options.rotate = true) ne l'active pas.
+        rotate: true,
+        bearing: 0,            // oriente vers le nord au premier chargement
+        touchRotate: true,     // rotation à 2 doigts (pincer + tourner), comme dans Google Maps
+        shiftKeyRotate: true,  // rotation à la souris (Maj + glisser), pour une utilisation au clavier/souris
+        rotateControl: false   // on masque la boussole générique du plugin : notre bouton
+                                // #northBtn plus bas, stylé comme le reste de l'app, la remplace
+      }).setView([31.7, -7.0], 6);
       fullMapSvgRenderer = L.svg().addTo(fullMap);
       addBaseLayers(fullMap);
       fullMapLineLayer = L.layerGroup().addTo(fullMap);
@@ -732,6 +768,11 @@
         }
         openRegardModalForNewPoint(e.latlng.lat, e.latlng.lng);
       });
+
+      // Garde l'aiguille du bouton #northBtn synchronisée avec l'orientation actuelle
+      // de la carte pendant qu'on la fait pivoter (glisser à 2 doigts / Maj+glisser),
+      // exactement comme l'icône boussole de Google Maps.
+      fullMap.on('rotate', updateNorthNeedle);
     }
     setTimeout(() => { fullMap.invalidateSize(); renderFullMap(); }, 50);
   }
@@ -743,6 +784,50 @@
     moveRegardMode = false;
     setDrawHint('');
     exitBrowserFullscreen();
+  }
+
+  // ----- Boussole / réorientation vers le nord (carte plein écran) -----
+  // "bearing" (leaflet-rotate) suit la convention cartographique standard : 0° = nord
+  // en haut, augmente dans le sens horaire (identique à la fonction computeBearing()
+  // déjà utilisée plus bas pour l'export KML). Faire pivoter la carte de +X° revient à
+  // faire pivoter visuellement son contenu de -X° (sens anti-horaire) à l'écran ; pour
+  // que l'aiguille continue de pointer vers le vrai nord, on lui applique donc la même
+  // rotation "-bearing".
+  function updateNorthNeedle() {
+    const needle = document.getElementById('northNeedle');
+    if (!needle || !fullMap || typeof fullMap.getBearing !== 'function') return;
+    const bearing = fullMap.getBearing() || 0;
+    needle.style.transform = 'rotate(' + (-bearing) + 'deg)';
+  }
+
+  let northAnimFrame = null;
+
+  function resetMapNorth() {
+    if (!fullMap || typeof fullMap.setBearing !== 'function') return;
+    if (northAnimFrame) cancelAnimationFrame(northAnimFrame);
+
+    const startBearing = fullMap.getBearing() || 0;
+    // Choisit le sens de rotation le plus court pour revenir à 0° (ex : depuis 350°,
+    // on avance de +10° plutôt que de reculer de -350°).
+    const delta = ((0 - startBearing + 540) % 360) - 180;
+    if (Math.abs(delta) < 0.5) { fullMap.setBearing(0); updateNorthNeedle(); return; }
+
+    const durationMs = 350;
+    const startTime = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - startTime) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic : ralentit en douceur à l'arrivée
+      fullMap.setBearing(startBearing + delta * eased);
+      updateNorthNeedle();
+      if (t < 1) {
+        northAnimFrame = requestAnimationFrame(step);
+      } else {
+        fullMap.setBearing(0); // évite tout écart d'arrondi résiduel
+        updateNorthNeedle();
+        northAnimFrame = null;
+      }
+    }
+    northAnimFrame = requestAnimationFrame(step);
   }
 
   // ----- Plein écran natif du navigateur (Fullscreen API) -----
@@ -1898,160 +1983,79 @@
   }
 
   // ----- KML export -----
-  //
-  // IMPORTANT — pourquoi des "Shared Styles" (styles nommés + <styleUrl>) au lieu
-  // d'un <Style> écrit directement dans chaque Placemark :
-  //
-  // L'ancienne version mettait un <Style> inline propre à chaque Placemark. Cela
-  // fonctionne dans Google Earth Pro (bureau) et dans un simple aperçu KML, mais PAS
-  // de façon fiable dans le "nouveau" Google Earth (celui utilisé quand on ouvre un
-  // fichier depuis Google Drive) : ce dernier traite un KML importé comme une "couche
-  // de données" (data layer) et lui applique son propre style automatique, qui prend
-  // le pas sur le <Style> inline de chaque Placemark. Résultat observé : toutes les
-  // icônes ressortent avec UNE SEULE couleur, quelle que soit la couleur choisie dans
-  // l'app pour chaque regard/collecteur.
-  //
-  // La solution robuste, recommandée par la référence KML elle-même, est de définir
-  // chaque couleur UNE SEULE FOIS comme un style partagé avec un id unique au niveau
-  // du <Document>, puis de faire pointer chaque Placemark vers ce style via
-  // <styleUrl>#id</styleUrl>. C'est ce que fait Google Earth (bureau ou web) en
-  // interne lorsqu'on colore un point depuis son interface — c'est donc la forme que
-  // l'import "couche de données" respecte le mieux.
   function buildKMLString() {
-    // Collecte l'ensemble des couleurs réellement utilisées (regards + collecteurs)
-    // afin de générer un unique <Style id="..."> par couleur, partagé par tous les
-    // Placemarks de cette couleur — au lieu de dupliquer un <Style> par Placemark.
-    const iconStyleIds = new Map();   // hex couleur -> id de style (points regard)
-    const lineStyleIds = new Map();   // hex couleur -> id de style (traits collecteur)
-    const labelStyleIds = new Map();  // hex couleur -> id de style (étiquette milieu)
-    const arrowStyleIds = new Map();  // hex couleur -> id de style (flèche de sens)
-
-    function normColor(hex, fallback) {
-      hex = String(hex || '').replace('#', '').toLowerCase();
-      return /^[0-9a-f]{6}$/.test(hex) ? hex : fallback;
-    }
-
-    regards.forEach(r => {
-      const hex = normColor(r.color, normColor(DEFAULT_REGARD_COLOR, '2d6a4f'));
-      if (!iconStyleIds.has(hex)) iconStyleIds.set(hex, 'iconRegard-' + hex);
-    });
-    conduites.forEach(c => {
-      const hex = normColor(c.color, normColor(DEFAULT_COND_COLOR, '2d6a4f'));
-      if (!lineStyleIds.has(hex)) lineStyleIds.set(hex, 'lineCond-' + hex);
-      if (!labelStyleIds.has(hex)) labelStyleIds.set(hex, 'labelCond-' + hex);
-      if (!arrowStyleIds.has(hex)) arrowStyleIds.set(hex, 'arrowCond-' + hex);
-    });
-
-    // ----- Bloc des styles partagés, une seule fois par couleur, au niveau du Document -----
-    let stylesBlock = '';
-    iconStyleIds.forEach((id, hex) => {
-      const kmlColor = hexToKmlColor(hex);
-      stylesBlock += '  <Style id="' + id + '"><IconStyle><color>' + kmlColor + '</color><scale>1.1</scale>' +
-        '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>\n';
-    });
-    lineStyleIds.forEach((id, hex) => {
-      const kmlColor = hexToKmlColor(hex);
-      stylesBlock += '  <Style id="' + id + '"><LineStyle><color>' + kmlColor + '</color><width>4</width></LineStyle></Style>\n';
-    });
-    labelStyleIds.forEach((id, hex) => {
-      const kmlColor = hexToKmlColor(hex);
-      stylesBlock += '  <Style id="' + id + '"><IconStyle><color>' + kmlColor + '</color><scale>0.01</scale></IconStyle>' +
-        '<LabelStyle><color>' + kmlColor + '</color><scale>0.9</scale></LabelStyle></Style>\n';
-    });
-    arrowStyleIds.forEach((id, hex) => {
-      const kmlColor = hexToKmlColor(hex);
-      stylesBlock += '  <Style id="' + id + '"><IconStyle><color>' + kmlColor + '</color><scale>0.8</scale>' +
-        '<Icon><href>http://earth.google.com/images/kml-icons/track-directional/track-0.png</href></Icon></IconStyle></Style>\n';
-    });
-
     let kml = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n' +
       '  <name>Diagnostic Reseau Assainissement</name>\n' +
-      stylesBlock +
       '  <Folder>\n    <name>Regards</name>\n';
 
     regards.forEach(r => {
-      const desc = 'Etat: ' + (r.etat || '-');
-      const hex = normColor(r.color, normColor(DEFAULT_REGARD_COLOR, '2d6a4f'));
-      const styleId = iconStyleIds.get(hex);
-      // <ExtendedData> en plus de <description> : certains convertisseurs KML -> DXF
-      // (pour AutoCAD) lisent les attributs depuis les champs de données structurées
-      // plutôt que depuis le texte libre de la description.
+      // On ajoute aussi, dans la description du regard lui-même, la liste des
+      // collecteurs qui y sont raccordés (nom + diamètre) : certains convertisseurs
+      // KML -> DXF (AutoCAD) n'exportent le texte QUE pour les Placemarks de type
+      // Point directement liés à une entité, donc dupliquer l'info ici garantit
+      // qu'elle reste visible à côté du regard même si le point d'étiquette du
+      // collecteur (au milieu du tracé) est filtré par la conversion.
+      const relatedConduites = conduites.filter(c => c.from === r.id || c.to === r.id);
+      let desc = 'Etat: ' + (r.etat || '-');
+      if (relatedConduites.length > 0) {
+        desc += '\nCollecteurs relies: ' + relatedConduites.map(c =>
+          c.name + ' (Ø' + (c.diameter || '-') + 'mm)'
+        ).join(', ');
+      }
+      const kmlColor = hexToKmlColor(r.color || DEFAULT_REGARD_COLOR);
+      // Style défini directement dans le Placemark (au lieu d'un styleUrl partagé) :
+      // chaque regard garde ainsi SA propre couleur choisie dans l'app.
       kml += '    <Placemark>\n      <name>' + escapeXML(r.name) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
-        '      <styleUrl>#' + styleId + '</styleUrl>\n' +
-        '      <ExtendedData>\n        <Data name="Regard"><value>' + escapeXML(r.name) + '</value></Data>\n' +
-        '        <Data name="Etat_regard"><value>' + escapeXML(r.etat || '-') + '</value></Data>\n      </ExtendedData>\n' +
+        '      <Style><IconStyle><color>' + kmlColor + '</color><scale>1.1</scale>' +
+        '<Icon><href>https://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>' +
+        '<LabelStyle><color>' + kmlColor + '</color></LabelStyle></Style>\n' +
         '      <Point><coordinates>' + r.lon + ',' + r.lat + ',0</coordinates></Point>\n    </Placemark>\n';
     });
 
     kml += '  </Folder>\n  <Folder>\n    <name>Collecteurs</name>\n';
 
-    // Les Placemarks des lignes (LineString) vont dans ce Folder "Collecteurs".
     conduites.forEach(c => {
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
       if (!rFrom || !rTo) return;
       const diam = c.diameter || '-';
-      // Description ramenée à UNE SEULE ligne : l'ancienne version mettait "Sens: ...
-      // \nDiametre: ..." sur deux lignes, mais le saut de ligne \n ne se convertit pas
-      // correctement lors de l'export KML -> DXF (AutoCAD) et les deux lignes se
-      // retrouvaient collées l'une à l'autre dans le texte affiché. Le nom du
-      // Placemark porte déjà "Collecteur (ØXXXmm)" donc la description n'a plus qu'à
-      // rappeler le sens, sur une seule ligne.
-      const desc = 'Sens: ' + rFrom.name + ' -> ' + rTo.name + ' | Diametre: ' + diam + ' mm';
-      const hex = normColor(c.color, normColor(DEFAULT_COND_COLOR, '2d6a4f'));
-      const lineId = lineStyleIds.get(hex);
-
-      kml += '    <Placemark>\n      <name>' + escapeXML(c.name) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
-        '      <styleUrl>#' + lineId + '</styleUrl>\n' +
-        '      <ExtendedData>\n        <Data name="Collecteur"><value>' + escapeXML(c.name) + '</value></Data>\n' +
-        '        <Data name="Diametre_mm"><value>' + escapeXML(String(diam)) + '</value></Data>\n' +
-        '        <Data name="Sens"><value>' + escapeXML(rFrom.name + ' -> ' + rTo.name) + '</value></Data>\n      </ExtendedData>\n' +
-        '      <LineString><coordinates>' + rFrom.lon + ',' + rFrom.lat + ',0 ' + rTo.lon + ',' + rTo.lat + ',0</coordinates></LineString>\n    </Placemark>\n';
-    });
-
-    // Les points d'étiquette (nom + diamètre) et les flèches de sens vont dans un
-    // Folder SÉPARÉ "Collecteurs_Labels" (et non plus mélangés avec les regards ou
-    // les lignes). En KML, chaque <Folder> devient en général un calque/layer distinct
-    // une fois converti en DXF pour AutoCAD : ces points restent donc facilement
-    // sélectionnables et supprimables d'un coup (ex. avec "sélection similaire") sans
-    // jamais entraîner les points des regards, qui gardent leur propre calque.
-    kml += '  </Folder>\n  <Folder>\n    <name>Collecteurs_Labels</name>\n';
-
-    conduites.forEach(c => {
-      const rFrom = regards.find(r => r.id === c.from);
-      const rTo = regards.find(r => r.id === c.to);
-      if (!rFrom || !rTo) return;
-      const diam = c.diameter || '-';
-      const hex = normColor(c.color, normColor(DEFAULT_COND_COLOR, '2d6a4f'));
-      const labelId = labelStyleIds.get(hex);
-      const arrowId = arrowStyleIds.get(hex);
+      const desc = 'Sens: ' + rFrom.name + ' -> ' + rTo.name + '\nDiametre: ' + diam + ' mm';
+      const kmlColor = hexToKmlColor(c.color || DEFAULT_COND_COLOR);
       const midLat = (rFrom.lat + rTo.lat) / 2, midLon = (rFrom.lon + rTo.lon) / 2;
       const bearing = computeBearing(rFrom.lat, rFrom.lon, rTo.lat, rTo.lon);
 
-      // Point d'étiquette au milieu du tracé, portant le nom ET le diamètre dans le
-      //  <name> lui-même (visible dans Google Earth ET dans les convertisseurs KML ->
-      //  DXF, qui ne génèrent en général du texte que pour les Placemarks de type
-      //  Point — une LineString seule n'exporte aucune étiquette visible, d'où
-      //  l'absence du nom et du diamètre du collecteur une fois dans AutoCAD). Pas de
-      //  <description> ici : le nom seul ("C38 (Ø400mm)") suffit pour l'étiquette, la
-      //  description complète est déjà portée par le Placemark-ligne ci-dessus.
-      kml += '    <Placemark>\n      <name>' + escapeXML(c.name + ' (Ø' + diam + 'mm)') + '</name>\n' +
-        '      <styleUrl>#' + labelId + '</styleUrl>\n' +
-        '      <ExtendedData>\n        <Data name="Collecteur"><value>' + escapeXML(c.name) + '</value></Data>\n' +
-        '        <Data name="Diametre_mm"><value>' + escapeXML(String(diam)) + '</value></Data>\n      </ExtendedData>\n' +
+      // 1) Le tracé du collecteur lui-même, avec SA couleur propre au lieu du style
+      //    global unique utilisé auparavant.
+      kml += '    <Placemark>\n      <name>' + escapeXML(c.name) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
+        '      <Style><LineStyle><color>' + kmlColor + '</color><width>4</width></LineStyle></Style>\n' +
+        '      <LineString><coordinates>' + rFrom.lon + ',' + rFrom.lat + ',0 ' + rTo.lon + ',' + rTo.lat + ',0</coordinates></LineString>\n    </Placemark>\n';
+
+      // 2) Point d'étiquette au milieu du tracé, portant le nom ET le diamètre.
+      //    Les convertisseurs KML -> DXF (utilisés pour ouvrir dans AutoCAD) ne
+      //    génèrent en général du texte que pour les Placemarks de type Point (comme
+      //    les regards) ; une LineString seule n'exporte aucune étiquette visible,
+      //    d'où l'absence du nom et du diamètre du collecteur une fois dans AutoCAD.
+      //    scale=0.01 était interprété par certains convertisseurs KML->DXF comme une
+      //    icône "invisible" et le Placemark entier (donc son texte) était ignoré ;
+      //    on utilise désormais une scale normale pour que le point (et son <name>)
+      //    soit bien exporté aussi vers AutoCAD.
+      kml += '    <Placemark>\n      <name>' + escapeXML(c.name + ' (Ø' + diam + 'mm)') + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
+        '      <Style><IconStyle><color>' + kmlColor + '</color><scale>0.6</scale>' +
+        '<Icon><href>https://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>' +
+        '<LabelStyle><color>' + kmlColor + '</color><scale>0.9</scale></LabelStyle></Style>\n' +
         '      <Point><coordinates>' + midLon + ',' + midLat + ',0</coordinates></Point>\n    </Placemark>\n';
 
-      // Flèche de sens d'écoulement : dans l'app c'est un triangle CSS (HTML), qui
-      //  n'existe pas en KML et disparaissait donc totalement à l'export. On la
-      //  remplace par une icône Point orientée (heading = cap géographique départ ->
-      //  arrivée), rendue par Google Earth comme un triangle directionnel et qui,
-      //  étant un Point comme les regards, survit aussi à un export DXF. Le heading
-      //  varie à CHAQUE collecteur (contrairement à la couleur, commune à tous), il
-      //  ne peut donc pas être mis dans le style partagé : on garde un petit
-      //  <Style> inline pour lui seul, en plus du styleUrl qui apporte la couleur.
+      // 3) Flèche de sens d'écoulement : dans l'app c'est un triangle CSS (HTML), qui
+      //    n'existe pas en KML et disparaissait donc totalement à l'export. On la
+      //    remplace par une icône Point orientée (heading = cap géographique
+      //    départ -> arrivée), rendue par Google Earth comme un triangle directionnel
+      //    et qui, étant un Point comme les regards, survit aussi à un export DXF.
+      //    Le lien http:// (non sécurisé) était bloqué par Google Earth ouvert depuis
+      //    Drive dans un contexte https, ce qui faisait disparaître complètement la
+      //    flèche ; on utilise désormais https://.
       kml += '    <Placemark>\n      <name></name>\n' +
-        '      <styleUrl>#' + arrowId + '</styleUrl>\n' +
-        '      <Style><IconStyle><heading>' + bearing.toFixed(1) + '</heading></IconStyle></Style>\n' +
+        '      <Style><IconStyle><color>' + kmlColor + '</color><scale>0.8</scale><heading>' + bearing.toFixed(1) + '</heading>' +
+        '<Icon><href>https://earth.google.com/images/kml-icons/track-directional/track-0.png</href></Icon></IconStyle></Style>\n' +
         '      <Point><coordinates>' + midLon + ',' + midLat + ',0</coordinates></Point>\n    </Placemark>\n';
     });
 
@@ -2059,13 +2063,17 @@
     return kml;
   }
 
-  function exportKML() {
+  function exportKML(forceOpenInBrowser) {
     if (regards.length === 0) {
       setExportStatus('Aucune donnée à exporter encore : ajoutez au moins un regard.', 'err');
       return;
     }
     const kml = buildKMLString();
     const filename = 'diagnostic-assainissement-' + new Date().toISOString().slice(0,10) + '.kml';
+    if (forceOpenInBrowser) {
+      openFileFallback(kml, 'application/vnd.google-earth.kml+xml', []);
+      return;
+    }
     downloadFile(kml, filename, 'application/vnd.google-earth.kml+xml');
   }
 
@@ -2276,64 +2284,78 @@
   // <a download>. On essaie donc plusieurs méthodes dans l'ordre, et on s'arrête à la
   // première qui ne lève pas d'exception, tout en gardant une trace de ce qui a été
   // essayé pour pouvoir diagnostiquer précisément si aucune ne fonctionne.
-  // Note technique : Les WebViews Android génériques (comme celles utilisées par les
-  // apps générées avec Appilix) n'ont, par défaut, AUCUN gestionnaire pour les URLs
-  // "blob:" : un lien <a href="blob:..."> avec l'attribut download ne déclenche aucune
-  // erreur JS (donc le code précédent croyait à tort avoir réussi) mais ne télécharge
-  // strictement rien. C'est exactement pourquoi le bouton d'export semblait ne "rien
-  // faire". La méthode data: URI, elle, fonctionne de façon fiable aussi bien dans ces
-  // WebViews que dans un navigateur normal — on la tente donc toujours en premier,
-  // Blob restant un second essai pour les cas où data: URI serait bloqué.
-
-  function tryBlobDownload(content, filename, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-  }
-
-  function tryDataUriDownload(content, filename, mimeType) {
-    const dataUri = 'data:' + mimeType + ';charset=utf-8,' + encodeURIComponent(content);
-    const a = document.createElement('a');
-    a.href = dataUri;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-
   function downloadFile(content, filename, mimeType) {
     const attempts = [];
-    // data: URI en premier (fiable dans les WebViews comme dans les navigateurs),
-    // Blob en second recours (meilleur dans un vrai navigateur, mais silencieusement
-    // inopérant dans la plupart des WebViews Android génériques — voir note ci-dessus).
-    const order = [['data-uri', tryDataUriDownload], ['Blob', tryBlobDownload]];
 
-    for (const [label, fn] of order) {
-      try {
-        fn(content, filename, mimeType);
-        // Ni data: URI ni Blob ne peuvent signaler une erreur JS si le WebView ignore
-        // silencieusement le clic : on ne peut donc pas garantir à 100 % la réussite
-        // ici. Le message reste donc volontairement prudent plutôt que de promettre
-        // un succès qui pourrait être faux.
-        setExportStatus('Téléchargement lancé pour "' + filename + '". Vérifiez le dossier "Téléchargements" de l\'appareil ou la notification de téléchargement. Si rien n\'apparaît après quelques secondes, appuyez à nouveau sur le bouton : la page proposera alors une autre méthode (ouverture dans un nouvel onglet avec menu "Partager"/"Enregistrer").', 'ok');
-        return;
-      } catch (e) {
-        attempts.push(label + ': ' + e.message);
-        console.error('Méthode ' + label + ' échouée', e);
-      }
+    // WebViews de type Appilix (et similaires) interceptent souvent les clics sur les
+    // liens <a download> / <a href="data:..."> et les redirigent vers leur propre
+    // gestionnaire de navigation externe au lieu de déclencher un téléchargement natif :
+    // aucune erreur JS n'est levée (donc les méthodes ci-dessous "réussissent" en
+    // apparence), mais rien n'est réellement enregistré sur l'appareil. Dans ce contexte
+    // précis, ouvrir directement le contenu avec window.open() est nettement plus fiable
+    // car Appilix route cet appel vers le navigateur système (Chrome/Safari), qui lui
+    // gère correctement les data: URIs et propose "Télécharger"/"Enregistrer sous".
+    if (isLikelyAppWebView()) {
+      openFileFallback(content, mimeType, attempts);
+      return;
     }
 
-    // Dernier recours : ouvrir dans un nouvel onglet/fenêtre, l'utilisateur utilise
-    // alors le menu natif "Partager"/"Enregistrer" du navigateur ou de l'app.
+    // Méthode 1 : Blob + URL.createObjectURL — généralement la plus fiable et la plus
+    // standard dans les navigateurs et WebViews récents.
+    try {
+      const blob = new Blob([content], { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+      setExportStatus('Fichier "' + filename + '" téléchargé (méthode Blob). S\'il n\'apparaît pas, vérifiez le dossier "Téléchargements" de l\'appareil. Si rien ne se passe, utilisez le bouton "Ouvrir dans le navigateur" ci-dessous.', 'ok');
+      return;
+    } catch (e) {
+      attempts.push('Blob: ' + e.message);
+      console.error('Méthode Blob échouée', e);
+    }
+
+    // Méthode 2 : data: URI — repli si Blob est bloqué.
+    try {
+      const dataUri = 'data:' + mimeType + ';charset=utf-8,' + encodeURIComponent(content);
+      const a = document.createElement('a');
+      a.href = dataUri;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setExportStatus('Fichier "' + filename + '" téléchargé (méthode alternative). S\'il n\'apparaît pas, utilisez le bouton ci-dessous.', 'ok');
+      return;
+    } catch (e) {
+      attempts.push('data-uri: ' + e.message);
+      console.error('Méthode data: URI échouée', e);
+    }
+
+    // Méthode 3 (dernier recours) : ouvrir dans un nouvel onglet/fenêtre, l'utilisateur
+    // utilise alors le menu natif "Partager"/"Enregistrer" du navigateur ou de l'app.
     openFileFallback(content, mimeType, attempts);
+  }
+
+  // Détecte (au mieux) un WebView d'app générée (Appilix, WebIntoApp, Median.co...)
+  // afin d'adapter la stratégie de téléchargement : ces WebViews n'exposent pas
+  // toujours "wv" dans le user-agent comme les WebViews Android standards, donc on
+  // combine plusieurs indices.
+  function isLikelyAppWebView() {
+    try {
+      const ua = navigator.userAgent || '';
+      const isAndroidWebView = /; wv\)/.test(ua) || (/Android/.test(ua) && /Version\//.test(ua));
+      const isStandaloneIOS = window.navigator.standalone === true;
+      const isDisplayModeStandalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+      return isAndroidWebView || isStandaloneIOS || isDisplayModeStandalone;
+    } catch (e) {
+      return false;
+    }
   }
 
   // Ouvre le contenu dans une nouvelle fenêtre/onglet (data: URI) afin que l'utilisateur
