@@ -738,6 +738,15 @@
         zoomControl: true,
         maxZoom: 21,
         preferCanvas: true,
+        // La rotation (leaflet-rotate) modifie la façon dont les tuiles ET les calques
+        // vectoriels (les lignes de collecteur) sont repositionnés PENDANT l'animation
+        // de zoom, et les deux ne restent pas toujours parfaitement synchronisés : les
+        // collecteurs restaient visiblement "en retard" une fraction de seconde à chaque
+        // zoom. En désactivant l'animation de zoom, chaque niveau de zoom s'affiche
+        // directement au bon endroit sans étape de transition animée : plus aucun
+        // décalage possible, au prix d'un zoom moins "fluide" (par palier net plutôt
+        // qu'un glissement progressif).
+        zoomAnimation: false,
         // --- Rotation libre de la carte (leaflet-rotate) ---
         // "rotate" doit impérativement être fourni ici, à la création de la carte : le
         // définir après coup (map.options.rotate = true) ne l'active pas.
@@ -769,10 +778,11 @@
         openRegardModalForNewPoint(e.latlng.lat, e.latlng.lng);
       });
 
-      // Garde l'aiguille du bouton #northBtn synchronisée avec l'orientation actuelle
-      // de la carte pendant qu'on la fait pivoter (glisser à 2 doigts / Maj+glisser),
-      // exactement comme l'icône boussole de Google Maps.
-      fullMap.on('rotate', updateNorthNeedle);
+      // Garde l'aiguille du bouton #northBtn et toutes les flèches de sens d'écoulement
+      // synchronisées avec l'orientation actuelle de la carte pendant qu'on la fait
+      // pivoter (glisser à 2 doigts / Maj+glisser) : l'aiguille indique le vrai nord
+      // comme sur Google Maps, et les flèches restent visuellement fixes.
+      fullMap.on('rotate', () => { updateNorthNeedle(); updateAllFlowArrowRotations(); });
     }
     setTimeout(() => { fullMap.invalidateSize(); renderFullMap(); }, 50);
   }
@@ -798,6 +808,31 @@
     if (!needle || !fullMap || typeof fullMap.getBearing !== 'function') return;
     const bearing = fullMap.getBearing() || 0;
     needle.style.transform = 'rotate(' + (-bearing) + 'deg)';
+  }
+
+  function getFullMapBearing() {
+    return (fullMap && typeof fullMap.getBearing === 'function') ? (fullMap.getBearing() || 0) : 0;
+  }
+
+  // ----- Flèche de sens d'écoulement : rotation compensée pour rester fixe -----
+  // La flèche (.cond-icon-arrow) vit dans le même calque que la carte (markerPane), qui
+  // pivote entièrement avec elle une fois la rotation activée : sans compensation, la
+  // flèche paraît donc pivoter/se pencher à chaque rotation de la carte, même si sa
+  // valeur CSS d'origine (angleDeg, calculée une fois pour toutes à partir du cap
+  // géographique départ->arrivée) ne change jamais. On lui ajoute donc dynamiquement le
+  // bearing actuel de la carte pour annuler exactement cette rotation involontaire du
+  // calque et garder la flèche visuellement fixe/droite, quelle que soit l'orientation
+  // choisie — contrairement à l'étiquette du nom, volontairement laissée telle quelle.
+  function applyFlowArrowRotation(marker, angleDeg) {
+    if (!marker) return;
+    const el = marker.getElement && marker.getElement();
+    if (!el) { setTimeout(() => applyFlowArrowRotation(marker, angleDeg), 50); return; }
+    const arrowEl = el.querySelector('.cond-icon-arrow');
+    if (arrowEl) arrowEl.style.transform = 'rotate(' + (angleDeg + getFullMapBearing()) + 'deg)';
+  }
+
+  function updateAllFlowArrowRotations() {
+    condLayerCache.forEach(entry => applyFlowArrowRotation(entry.marker, entry.lastAngle));
   }
 
   let northAnimFrame = null;
@@ -1223,6 +1258,7 @@
           icon: buildCollecteurIcon(condColor, c.name, angleDeg),
           interactive: false
         }).addTo(fullMapLineLayer);
+        applyFlowArrowRotation(marker, angleDeg);
 
         // bindLongPress n'est appelée qu'ICI, une seule fois par collecteur pour toute
         // la durée de vie de la carte (sauf suppression).
@@ -1251,8 +1287,10 @@
           entry.lastColor = condColor;
           entry.lastAngle = angleDeg;
           entry.marker.setIcon(buildCollecteurIcon(condColor, c.name, angleDeg));
+          applyFlowArrowRotation(entry.marker, angleDeg);
         } else if (entry.lastName !== c.name) {
           entry.marker.setIcon(buildCollecteurIcon(condColor, c.name, angleDeg));
+          applyFlowArrowRotation(entry.marker, angleDeg);
         }
         entry.lastName = c.name;
       }
