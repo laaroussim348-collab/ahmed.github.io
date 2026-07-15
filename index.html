@@ -209,14 +209,15 @@
   #myLocationBtn.tracking { background: #1a73e8; color: white; }
 
   /* Bouton boussole "Nord" : même gabarit que #myLocationBtn (48x48, à côté de lui).
-     L'aiguille SVG à l'intérieur tourne en continu pour indiquer où se trouve le nord
-     réel pendant qu'on fait pivoter la carte (comme la boussole de Google Maps) ; un
-     appui la ramène animé à zéro, comme le bouton de réorientation de Google Earth. */
+     Toucher = revient au nord ; glisser en cercle = fait pivoter la carte (voir
+     initNorthBtnDial). touch-action:none empêche le navigateur d'interpréter ce
+     glissement comme un geste de défilement de page, ce qui rendrait la rotation saccadée. */
   #northBtn {
     flex: 0 0 48px; height: 48px; border-radius: 10px; border: none;
     background: white; display: flex; align-items: center; justify-content: center;
+    touch-action: none;
   }
-  #northNeedle { transition: transform 0.12s linear; }
+  #northNeedle { }
 
   /* Point bleu pulsant représentant la position GPS en direct, comme sur Google Maps/Earth */
   .my-location-dot {
@@ -474,7 +475,7 @@
     <div class="bottom-bar-row">
       <button id="drawModeBtn" class="draw-mode-btn" onclick="toggleDrawMode()">✏️ Dessiner un collecteur</button>
       <button id="myLocationBtn" onclick="toggleMyLocationTracking()" title="Ma position">📍</button>
-      <button id="northBtn" onclick="resetMapNorth()" title="Réorienter vers le nord" aria-label="Réorienter vers le nord">
+      <button id="northBtn" title="Toucher : revenir au nord. Glisser en cercle : tourner la carte." aria-label="Réorienter vers le nord (glisser pour tourner)">
         <svg id="northNeedle" viewBox="0 0 24 24" width="22" height="22">
           <polygon points="12,2 16,12 8,12" fill="var(--manhole)"></polygon>
           <polygon points="12,22 16,12 8,12" fill="#c9d3cd"></polygon>
@@ -624,6 +625,7 @@
   // ----- Init -----
   window.addEventListener('DOMContentLoaded', async () => {
     initMap();
+    initNorthBtnDial();
     await loadData();
     renderAll();
     checkOAuthRedirectResult();
@@ -738,21 +740,24 @@
         zoomControl: true,
         maxZoom: 21,
         preferCanvas: true,
-        // La rotation (leaflet-rotate) modifie la façon dont les tuiles ET les calques
-        // vectoriels (les lignes de collecteur) sont repositionnés PENDANT l'animation
-        // de zoom, et les deux ne restent pas toujours parfaitement synchronisés : les
-        // collecteurs restaient visiblement "en retard" une fraction de seconde à chaque
-        // zoom. En désactivant l'animation de zoom, chaque niveau de zoom s'affiche
-        // directement au bon endroit sans étape de transition animée : plus aucun
-        // décalage possible, au prix d'un zoom moins "fluide" (par palier net plutôt
-        // qu'un glissement progressif).
-        zoomAnimation: false,
         // --- Rotation libre de la carte (leaflet-rotate) ---
         // "rotate" doit impérativement être fourni ici, à la création de la carte : le
         // définir après coup (map.options.rotate = true) ne l'active pas.
         rotate: true,
-        bearing: 0,            // oriente vers le nord au premier chargement
-        touchRotate: true,     // rotation à 2 doigts (pincer + tourner), comme dans Google Maps
+        bearing: 0,             // oriente vers le nord au premier chargement
+        // touchRotate (rotation à 2 doigts) est volontairement DÉSACTIVÉE : c'est un bug
+        // confirmé, connu et jamais corrigé dans leaflet-rotate (voir Raruto/leaflet-rotate
+        // PR #48 "Prevent map from rotating when user just wants to zoom" — le plugin ne
+        // distingue pas fiablement "pincer pour zoomer" de "tourner à 2 doigts", donc un
+        // simple pincement fait aussi légèrement pivoter la carte, ce qui provoquait à la
+        // fois la rotation involontaire ET le décalage/retard des collecteurs pendant le
+        // zoom (les deux symptômes signalés viennent de la même cause). Tenter de forcer
+        // une animation de zoom instantanée pour masquer le décalage (essayé précédemment)
+        // ne traitait que le symptôme, pas la cause, d'où le nouveau problème que ça a créé.
+        // La rotation tactile précise est maintenant assurée par un cadran dédié, entièrement
+        // indépendant du pincement (voir initNorthBtnDial plus bas) : aucune ambiguïté de
+        // geste n'est donc plus possible, et le zoom retrouve son animation fluide normale.
+        touchRotate: false,
         shiftKeyRotate: true,  // rotation à la souris (Maj + glisser), pour une utilisation au clavier/souris
         rotateControl: false   // on masque la boussole générique du plugin : notre bouton
                                 // #northBtn plus bas, stylé comme le reste de l'app, la remplace
@@ -863,6 +868,61 @@
       }
     }
     northAnimFrame = requestAnimationFrame(step);
+  }
+
+  // ----- Cadran de rotation sur #northBtn (remplace touchRotate) -----
+  // Toucher/cliquer sans bouger : revient au nord (resetMapNorth). Glisser en cercle
+  // autour du bouton : fait pivoter la carte précisément, au degré près, en suivant le
+  // doigt/la souris. Ce geste est entièrement séparé du pincement à 2 doigts sur la
+  // carte (utilisé uniquement pour zoomer désormais) : il n'y a donc plus aucune
+  // ambiguïté possible entre "zoomer" et "tourner".
+  const NORTH_BTN_DRAG_THRESHOLD_PX = 6;
+
+  function initNorthBtnDial() {
+    const btn = document.getElementById('northBtn');
+    if (!btn) return;
+    let dragging = false;
+    let moved = false;
+    let startX = 0, startY = 0;
+
+    function bearingFromPointer(clientX, clientY) {
+      const rect = btn.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
+      const deg = Math.atan2(dx, -dy) * 180 / Math.PI; // 0° = doigt au-dessus du bouton (nord)
+      return ((deg % 360) + 360) % 360;
+    }
+
+    btn.addEventListener('pointerdown', (e) => {
+      if (!fullMap || typeof fullMap.setBearing !== 'function') return;
+      if (northAnimFrame) { cancelAnimationFrame(northAnimFrame); northAnimFrame = null; }
+      dragging = true;
+      moved = false;
+      startX = e.clientX; startY = e.clientY;
+      try { btn.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault();
+    });
+
+    btn.addEventListener('pointermove', (e) => {
+      if (!dragging || !fullMap) return;
+      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) > NORTH_BTN_DRAG_THRESHOLD_PX) {
+        moved = true;
+      }
+      if (moved) {
+        fullMap.setBearing(bearingFromPointer(e.clientX, e.clientY));
+      }
+    });
+
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { btn.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (!moved) resetMapNorth(); // simple appui, sans glissement -> retour au nord
+    }
+    btn.addEventListener('pointerup', endDrag);
+    btn.addEventListener('pointercancel', endDrag);
   }
 
   // ----- Plein écran natif du navigateur (Fullscreen API) -----
