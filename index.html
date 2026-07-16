@@ -872,10 +872,21 @@
 
   // ----- Cadran de rotation sur #northBtn (remplace touchRotate) -----
   // Toucher/cliquer sans bouger : revient au nord (resetMapNorth). Glisser en cercle
-  // autour du bouton : fait pivoter la carte précisément, au degré près, en suivant le
-  // doigt/la souris. Ce geste est entièrement séparé du pincement à 2 doigts sur la
-  // carte (utilisé uniquement pour zoomer désormais) : il n'y a donc plus aucune
-  // ambiguïté possible entre "zoomer" et "tourner".
+  // autour du bouton : fait pivoter la carte, en suivant le doigt/la souris. Ce geste
+  // est entièrement séparé du pincement à 2 doigts sur la carte (utilisé uniquement
+  // pour zoomer désormais) : il n'y a donc plus aucune ambiguïté possible entre
+  // "zoomer" et "tourner".
+  //
+  // Important : on accumule la DIFFÉRENCE d'angle entre deux positions successives du
+  // doigt, plutôt que de convertir sa position ABSOLUE autour du bouton en un bearing
+  // absolu. Avec une position absolue, la rotation totale possible en UN geste continu
+  // est limitée par l'amplitude naturelle du poignet (environ 60-90°) ; en relâchant
+  // puis en retouchant le bouton pour continuer, le nouveau geste repartait alors de la
+  // position ABSOLUE du doigt et annulait une partie de la rotation déjà faite — d'où
+  // le blocage observé autour de 60°. En accumulant plutôt un delta à chaque geste, la
+  // carte continue toujours depuis son orientation actuelle : plusieurs glissements
+  // successifs (comme on tournerait un volant à petits coups) permettent d'atteindre
+  // n'importe quel angle, sans limite.
   const NORTH_BTN_DRAG_THRESHOLD_PX = 6;
 
   function initNorthBtnDial() {
@@ -883,16 +894,17 @@
     if (!btn) return;
     let dragging = false;
     let moved = false;
-    let startX = 0, startY = 0;
+    let startX = 0, startY = 0;    // position du doigt au pointerdown (pour distinguer tap / glissement)
+    let lastPointerAngle = 0;      // angle du doigt autour du bouton, mis à jour à chaque déplacement
+    let runningBearing = 0;        // bearing de la carte accumulé pendant le geste en cours
 
-    function bearingFromPointer(clientX, clientY) {
+    function angleFromCenter(clientX, clientY) {
       const rect = btn.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       const dx = clientX - cx;
       const dy = clientY - cy;
-      const deg = Math.atan2(dx, -dy) * 180 / Math.PI; // 0° = doigt au-dessus du bouton (nord)
-      return ((deg % 360) + 360) % 360;
+      return Math.atan2(dx, -dy) * 180 / Math.PI; // -180..180, 0° = doigt au-dessus du centre
     }
 
     btn.addEventListener('pointerdown', (e) => {
@@ -901,6 +913,8 @@
       dragging = true;
       moved = false;
       startX = e.clientX; startY = e.clientY;
+      lastPointerAngle = angleFromCenter(e.clientX, e.clientY);
+      runningBearing = fullMap.getBearing() || 0; // toujours resynchronisé sur l'état réel actuel
       try { btn.setPointerCapture(e.pointerId); } catch (err) {}
       e.preventDefault();
     });
@@ -911,7 +925,13 @@
         moved = true;
       }
       if (moved) {
-        fullMap.setBearing(bearingFromPointer(e.clientX, e.clientY));
+        const currentAngle = angleFromCenter(e.clientX, e.clientY);
+        // Delta le plus court entre les deux angles (évite un saut de ~360° quand on
+        // traverse la ligne nord/0°).
+        const delta = ((currentAngle - lastPointerAngle + 540) % 360) - 180;
+        runningBearing = (runningBearing + delta + 360) % 360;
+        lastPointerAngle = currentAngle;
+        fullMap.setBearing(runningBearing);
       }
     });
 
@@ -2110,54 +2130,64 @@
         '      <Point><coordinates>' + r.lon + ',' + r.lat + ',0</coordinates></Point>\n    </Placemark>\n';
     });
 
-    kml += '  </Folder>\n  <Folder>\n    <name>Collecteurs</name>\n';
-
-    conduites.forEach(c => {
+    // Les données de chaque collecteur sont calculées une seule fois puis utilisées
+    // pour générer 2 sous-dossiers distincts (voir plus bas) : Google Earth affiche
+    // chaque <Folder> comme un calque qu'on peut afficher/masquer indépendamment, donc
+    // séparer "Tracés" et "Étiquettes" permet par exemple de masquer les étiquettes
+    // seules tout en gardant les tracés visibles.
+    const conduiteData = conduites.map(c => {
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
-      if (!rFrom || !rTo) return;
+      if (!rFrom || !rTo) return null;
       const diam = c.diameter || '-';
-      const desc = 'Sens: ' + rFrom.name + ' -> ' + rTo.name + '\nDiametre: ' + diam + ' mm';
-      const kmlColor = hexToKmlColor(c.color || DEFAULT_COND_COLOR);
-      const midLat = (rFrom.lat + rTo.lat) / 2, midLon = (rFrom.lon + rTo.lon) / 2;
-      const bearing = computeBearing(rFrom.lat, rFrom.lon, rTo.lat, rTo.lon);
+      return {
+        c, diam,
+        desc: 'Sens: ' + rFrom.name + ' -> ' + rTo.name + '\nDiametre: ' + diam + ' mm',
+        kmlColor: hexToKmlColor(c.color || DEFAULT_COND_COLOR),
+        fromLon: rFrom.lon, fromLat: rFrom.lat, toLon: rTo.lon, toLat: rTo.lat,
+        midLat: (rFrom.lat + rTo.lat) / 2, midLon: (rFrom.lon + rTo.lon) / 2,
+        bearing: computeBearing(rFrom.lat, rFrom.lon, rTo.lat, rTo.lon)
+      };
+    }).filter(Boolean);
 
-      // 1) Le tracé du collecteur lui-même, avec SA couleur propre au lieu du style
-      //    global unique utilisé auparavant.
-      kml += '    <Placemark>\n      <name>' + escapeXML(c.name) + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
-        '      <Style><LineStyle><color>' + kmlColor + '</color><width>4</width></LineStyle></Style>\n' +
-        '      <LineString><coordinates>' + rFrom.lon + ',' + rFrom.lat + ',0 ' + rTo.lon + ',' + rTo.lat + ',0</coordinates></LineString>\n    </Placemark>\n';
+    kml += '  </Folder>\n  <Folder>\n    <name>Collecteurs</name>\n    <Folder>\n      <name>Traces</name>\n';
 
-      // 2) Point d'étiquette au milieu du tracé, portant le nom ET le diamètre.
-      //    Les convertisseurs KML -> DXF (utilisés pour ouvrir dans AutoCAD) ne
-      //    génèrent en général du texte que pour les Placemarks de type Point (comme
-      //    les regards) ; une LineString seule n'exporte aucune étiquette visible,
-      //    d'où l'absence du nom et du diamètre du collecteur une fois dans AutoCAD.
-      //    scale=0.01 était interprété par certains convertisseurs KML->DXF comme une
-      //    icône "invisible" et le Placemark entier (donc son texte) était ignoré ;
-      //    on utilise désormais une scale normale pour que le point (et son <name>)
-      //    soit bien exporté aussi vers AutoCAD.
-      kml += '    <Placemark>\n      <name>' + escapeXML(c.name + ' (Ø' + diam + 'mm)') + '</name>\n      <description>' + escapeXML(desc) + '</description>\n' +
-        '      <Style><IconStyle><color>' + kmlColor + '</color><scale>0.6</scale>' +
-        '<Icon><href>https://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>' +
-        '<LabelStyle><color>' + kmlColor + '</color><scale>0.9</scale></LabelStyle></Style>\n' +
-        '      <Point><coordinates>' + midLon + ',' + midLat + ',0</coordinates></Point>\n    </Placemark>\n';
-
-      // 3) Flèche de sens d'écoulement : dans l'app c'est un triangle CSS (HTML), qui
-      //    n'existe pas en KML et disparaissait donc totalement à l'export. On la
-      //    remplace par une icône Point orientée (heading = cap géographique
-      //    départ -> arrivée), rendue par Google Earth comme un triangle directionnel
-      //    et qui, étant un Point comme les regards, survit aussi à un export DXF.
-      //    Le lien http:// (non sécurisé) était bloqué par Google Earth ouvert depuis
-      //    Drive dans un contexte https, ce qui faisait disparaître complètement la
-      //    flèche ; on utilise désormais https://.
-      kml += '    <Placemark>\n      <name></name>\n' +
-        '      <Style><IconStyle><color>' + kmlColor + '</color><scale>0.8</scale><heading>' + bearing.toFixed(1) + '</heading>' +
-        '<Icon><href>https://earth.google.com/images/kml-icons/track-directional/track-0.png</href></Icon></IconStyle></Style>\n' +
-        '      <Point><coordinates>' + midLon + ',' + midLat + ',0</coordinates></Point>\n    </Placemark>\n';
+    conduiteData.forEach(d => {
+      // Le tracé du collecteur lui-même, avec SA couleur propre au lieu du style
+      // global unique utilisé auparavant.
+      kml += '      <Placemark>\n        <name>' + escapeXML(d.c.name) + '</name>\n        <description>' + escapeXML(d.desc) + '</description>\n' +
+        '        <Style><LineStyle><color>' + d.kmlColor + '</color><width>4</width></LineStyle></Style>\n' +
+        '        <LineString><coordinates>' + d.fromLon + ',' + d.fromLat + ',0 ' + d.toLon + ',' + d.toLat + ',0</coordinates></LineString>\n      </Placemark>\n';
     });
 
-    kml += '  </Folder>\n</Document>\n</kml>';
+    kml += '    </Folder>\n    <Folder>\n      <name>Etiquettes et sens</name>\n';
+
+    conduiteData.forEach(d => {
+      // Point unique combinant l'étiquette (nom + diamètre, pour AutoCAD) ET la flèche
+      // de sens d'écoulement orientée (icône directionnelle avec heading, pour Google
+      // Earth) : auparavant 2 Placemarks séparés (un point d'étiquette "invisible" +
+      // un point flèche sans nom). Les fusionner en 1 seul réduit de ~1/3 le nombre
+      // total d'entités du fichier, ce qui compte vraiment : Google Earth Web bascule
+      // AUTOMATIQUEMENT (et peut ne même plus proposer d'autre choix) vers son mode
+      // "couche de données" pour les fichiers trop volumineux/complexes, qui applique
+      // UN SEUL style à toute la couche et ignore les couleurs individuelles de chaque
+      // Placemark — au lieu du mode "entités de carte", qui lui garde bien la couleur
+      // propre à chaque élément. C'est ce qui explique la perte des couleurs
+      // personnalisées, avec ce comportement qui peut varier d'un import à l'autre
+      // (donc d'un navigateur/appareil à l'autre, si le fichier est ouvert en "fichier
+      // KML local", qui n'est PAS synchronisé via Drive et n'existe que sur l'appareil
+      // où il a été ouvert).
+      // -> Conseil complémentaire, côté Google Earth cette fois : au moment d'importer
+      // le fichier, si le choix est proposé, sélectionnez "Importer comme entités de
+      // carte" plutôt que "Importer comme couche de données".
+      kml += '      <Placemark>\n        <name>' + escapeXML(d.c.name + ' (Ø' + d.diam + 'mm)') + '</name>\n        <description>' + escapeXML(d.desc) + '</description>\n' +
+        '        <Style><IconStyle><color>' + d.kmlColor + '</color><scale>0.8</scale><heading>' + d.bearing.toFixed(1) + '</heading>' +
+        '<Icon><href>https://earth.google.com/images/kml-icons/track-directional/track-0.png</href></Icon></IconStyle>' +
+        '<LabelStyle><color>' + d.kmlColor + '</color><scale>0.9</scale></LabelStyle></Style>\n' +
+        '        <Point><coordinates>' + d.midLon + ',' + d.midLat + ',0</coordinates></Point>\n      </Placemark>\n';
+    });
+
+    kml += '    </Folder>\n  </Folder>\n</Document>\n</kml>';
     return kml;
   }
 
