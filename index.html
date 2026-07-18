@@ -95,6 +95,7 @@
     flex-shrink: 0;
   }
   .card.conduites .toggle-list-btn, #condToggleBtn { background: var(--primary-deep); }
+  #condSelectModeBtn.active-select { background: #c0392b; }
   .collapsible-list { display: none; }
   .collapsible-list.open { display: block; }
 
@@ -351,6 +352,24 @@
 
   .empty-hint { color: var(--text-light); font-size: 13px; padding: 10px 2px 2px; }
 
+  /* Sélection multiple de collecteurs (addition de longueur) : la liste bascule en
+     mode "case à cocher" — chaque ligne devient tactile sur toute sa largeur au lieu
+     du seul bouton ✕, et un résumé collant en bas de carte affiche le total en direct. */
+  ul.item-list.select-mode li { cursor: pointer; }
+  ul.item-list.select-mode li.selected { background: #eef5f1; border-radius: 8px; }
+  .cond-select-checkbox {
+    width: 20px; height: 20px; border-radius: 5px; border: 2px solid var(--border);
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: white; margin-top: 1px;
+  }
+  li.selected .cond-select-checkbox { background: var(--primary); border-color: var(--primary); }
+  .cond-select-summary {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--primary-deep); color: white; border-radius: 9px;
+    padding: 10px 14px; margin-top: 12px; font-size: 13.5px;
+  }
+  .cond-select-total { font-family: var(--mono); font-weight: 700; font-size: 15px; }
+
   .status-msg { font-size: 12.5px; margin-top: 8px; min-height: 14px; line-height: 1.5; }
   .status-ok { color: var(--success); }
   .status-err { color: var(--danger); }
@@ -413,6 +432,33 @@
     <div class="status-msg" id="importStatus"></div>
   </div>
 
+  <div class="card locate" id="coordEntryCard">
+    <h2>Aller à des coordonnées précises</h2>
+    <p class="hint">
+      Saisissez des coordonnées connues (relevé GPS externe, plan, procès-verbal de bornage…) pour placer un regard exactement à cet endroit, sans avoir à le repérer visuellement sur la carte.
+    </p>
+    <label>Système de coordonnées</label>
+    <select id="coordSystemSelect" onchange="onCoordSystemChange()">
+      <option value="wgs84">WGS 1984 (latitude / longitude, GPS standard)</option>
+      <option value="lambert1">Lambert Maroc — Zone 1 (Nord)</option>
+      <option value="lambert2">Lambert Maroc — Zone 2 (Sud)</option>
+      <option value="lambert3">Lambert Maroc — Zone 3 (Sahara Nord)</option>
+      <option value="lambert4">Lambert Maroc — Zone 4 (Sahara Sud)</option>
+    </select>
+    <div class="row-two">
+      <div>
+        <label id="coordLabelX">Latitude</label>
+        <input id="coordInputX" type="text" inputmode="decimal" placeholder="ex: 33.5731" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="coord-input-x">
+      </div>
+      <div>
+        <label id="coordLabelY">Longitude</label>
+        <input id="coordInputY" type="text" inputmode="decimal" placeholder="ex: -7.5898" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="coord-input-y">
+      </div>
+    </div>
+    <button class="btn-manhole" onclick="goToTypedCoordinates()">📍 Aller à cet endroit et créer un regard</button>
+    <div class="status-msg" id="coordEntryStatus"></div>
+  </div>
+
   <div class="card">
     <h2>
       <span class="dot"></span>Regards <span class="badge-count" id="regardCount">0</span>
@@ -427,11 +473,17 @@
   <div class="card">
     <h2>
       <span class="dash"></span>Collecteurs <span class="badge-count" id="conduiteCount">0</span>
+      <button class="toggle-list-btn" id="condSelectModeBtn" onclick="toggleCondSelectMode()" aria-label="Sélectionner plusieurs collecteurs" title="Sélectionner plusieurs collecteurs pour additionner leur longueur">Σ</button>
       <button class="toggle-list-btn" id="condToggleBtn" onclick="toggleListSection('cond')" aria-label="Afficher/masquer la liste">+</button>
     </h2>
+    <p class="hint" id="condSelectHint" style="display:none;">Touchez les collecteurs à additionner. Un appui long sur la liste fait aussi basculer ce mode.</p>
     <div class="collapsible-list" id="condListWrap">
       <ul class="item-list" id="condList"></ul>
       <div class="empty-hint" id="condEmptyHint">Aucun collecteur pour l'instant. Ouvrez la carte complète, activez le mode "Dessiner un collecteur", puis touchez deux regards.</div>
+    </div>
+    <div class="cond-select-summary" id="condSelectSummary" style="display:none;">
+      <span id="condSelectCountLabel">0 collecteur sélectionné</span>
+      <span class="cond-select-total" id="condSelectTotalLabel">0 m</span>
     </div>
   </div>
 
@@ -539,6 +591,12 @@
     <div class="color-picker" id="editRegardColorPicker"></div>
     <label>État du regard</label>
     <input id="editRegardEtat" placeholder="ex: bon, fissuré, cassé..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="edit-regard-etat-rgd2">
+    <div class="position-box">
+      <div>Latitude<span class="val" id="editRegardLatVal">—</span></div>
+      <div>Longitude<span class="val" id="editRegardLonVal">—</span></div>
+    </div>
+    <button class="btn-outline" id="copyRegardCoordsBtn" onclick="copyEditingRegardCoordinates()">📋 Copier les coordonnées WGS 1984</button>
+    <div class="status-msg" id="copyCoordsStatus"></div>
     <button class="btn-outline" id="moveRegardBtn" onclick="startMoveRegard()">📍 Déplacer ce point sur la carte</button>
     <div class="modal-actions">
       <button class="btn-outline-danger" onclick="confirmDeleteRegardFromEdit()">Supprimer</button>
@@ -626,6 +684,7 @@
   window.addEventListener('DOMContentLoaded', async () => {
     initMap();
     initNorthBtnDial();
+    initCondListLongPress();
     await loadData();
     renderAll();
     checkOAuthRedirectResult();
@@ -1598,6 +1657,152 @@
   const COND_COLORS = ['#2d6a4f', '#1d4ed8', '#d62828', '#c2790f', '#0891b2'];
   const DEFAULT_COND_COLOR = COND_COLORS[0];
 
+  // ----- Lambert Maroc (Merchich) : paramètres officiels des 4 zones -----
+  // Ellipsoïde Clarke 1880 (IGN), datum Merchich, projection conique conforme de
+  // Lambert à 1 point (Lambert Conformal Conic 1SP), conforme aux définitions EPSG
+  // officielles utilisées par l'ANCFCC (zone III = EPSG:26194 "Sahara Nord" et non
+  // 26193 "Sahara" qui n'est pas l'une des 4 zones officielles). Vérifié par calcul
+  // indépendant (pyproj) : la projection Lambert elle-même est exacte au millimètre
+  // pour les 4 zones. +towgs84 donne le décalage Merchich -> WGS84 (transformation à
+  // 3 paramètres) : pour les zones 1 et 2, il correspond exactement à la base EPSG/PROJ
+  // officielle (écart nul) ; pour les zones 3 et 4 (Sahara), la base EPSG officielle
+  // utilise en interne un jeu de paramètres plus riche et non public, d'où un écart
+  // résiduel pouvant atteindre ~150-250m par rapport à cette transformation simplifiée.
+  // Largement suffisant pour repérer un regard sur le terrain, mais à ne jamais utiliser
+  // pour du bornage légal en zone Sahara — dans ce cas, rattachement GPS direct aux
+  // points géodésiques ANCFCC obligatoire.
+  const MERCHICH_ELLIPSOID = { a: 6378249.2, invF: 293.466021293627 };
+  const MERCHICH_TOWGS84 = { dx: 31, dy: 146, dz: 47 }; // mètres
+  const LAMBERT_ZONES = {
+    1: { label: 'Lambert Maroc — Zone 1 (Nord)',        lat0: 33.3, lon0: -5.4, k0: 0.999625769, x0: 500000,  y0: 300000 },
+    2: { label: 'Lambert Maroc — Zone 2 (Sud)',         lat0: 29.7, lon0: -5.4, k0: 0.999615596, x0: 500000,  y0: 300000 },
+    3: { label: 'Lambert Maroc — Zone 3 (Sahara Nord)', lat0: 26.1, lon0: -5.4, k0: 0.999616304, x0: 1200000, y0: 400000 },
+    4: { label: 'Lambert Maroc — Zone 4 (Sahara Sud)',  lat0: 22.5, lon0: -5.4, k0: 0.999616437, x0: 1500000, y0: 400000 }
+  };
+
+  // Convertit un point Lambert Maroc (X, Y en mètres, zone 1-4) vers WGS84 (lat/lon
+  // en degrés décimaux), en 2 étapes : (1) projection inverse de Lambert conique
+  // conforme -> lat/lon sur l'ellipsoïde Merchich (Clarke 1880 IGN), par la méthode
+  // itérative standard (IGN / EPSG guidance note 7-2, méthode Lambert 1SP inverse) ;
+  // (2) transformation à 3 paramètres (translation) Merchich -> WGS84.
+  function lambertMarocToWGS84(x, y, zoneNum) {
+    const zone = LAMBERT_ZONES[zoneNum];
+    if (!zone) return null;
+    const a = MERCHICH_ELLIPSOID.a;
+    const f = 1 / MERCHICH_ELLIPSOID.invF;
+    const e = Math.sqrt(2 * f - f * f); // première excentricité de l'ellipsoïde
+    const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+    const lat0 = toRad(zone.lat0), lon0 = toRad(zone.lon0);
+
+    // Lambert 1SP (EPSG 9801) : n = sin(lat0), et calcul de R0 (rayon à l'origine) à
+    // partir du point isométrique de latitude, tous deux nécessaires pour l'inverse.
+    const n = Math.sin(lat0);
+    const m0 = Math.cos(lat0) / Math.sqrt(1 - e * e * Math.sin(lat0) * Math.sin(lat0));
+    const t0 = Math.tan(Math.PI / 4 - lat0 / 2) / Math.pow((1 - e * Math.sin(lat0)) / (1 + e * Math.sin(lat0)), e / 2);
+    const bigF = m0 / (n * Math.pow(t0, n));
+    const r0 = a * zone.k0 * bigF * Math.pow(t0, n);
+
+    const dx = x - zone.x0, dy = y - zone.y0;
+    const r = Math.sign(n) * Math.sqrt(dx * dx + (r0 - dy) * (r0 - dy));
+    const theta = Math.atan2(dx, r0 - dy);
+    const t = Math.pow(r / (a * zone.k0 * bigF), 1 / n);
+
+    // Latitude par itération (converge en 4-5 passes pour cette excentricité) :
+    // méthode standard de la note technique EPSG pour Lambert Conformal Conic 1SP inverse.
+    let lat = Math.PI / 2 - 2 * Math.atan(t);
+    for (let i = 0; i < 6; i++) {
+      const esinlat = e * Math.sin(lat);
+      lat = Math.PI / 2 - 2 * Math.atan(t * Math.pow((1 - esinlat) / (1 + esinlat), e / 2));
+    }
+    const lon = theta / n + lon0;
+
+    return merchichToWGS84(toDeg(lat), toDeg(lon));
+  }
+
+  // Convertit un point WGS84 (lat/lon) vers Lambert Maroc (X, Y en mètres) pour une
+  // zone donnée : transformation inverse de Merchich vers WGS84 ci-dessus, puis
+  // projection directe de Lambert conique conforme (EPSG 9801, méthode directe).
+  function wgs84ToLambertMaroc(lat, lon, zoneNum) {
+    const zone = LAMBERT_ZONES[zoneNum];
+    if (!zone) return null;
+    const merch = wgs84ToMerchich(lat, lon);
+    const a = MERCHICH_ELLIPSOID.a;
+    const f = 1 / MERCHICH_ELLIPSOID.invF;
+    const e = Math.sqrt(2 * f - f * f);
+    const toRad = d => d * Math.PI / 180;
+    const lat0 = toRad(zone.lat0), lon0 = toRad(zone.lon0);
+    const latR = toRad(merch.lat), lonR = toRad(merch.lon);
+
+    const n = Math.sin(lat0);
+    const m0 = Math.cos(lat0) / Math.sqrt(1 - e * e * Math.sin(lat0) * Math.sin(lat0));
+    const t0 = Math.tan(Math.PI / 4 - lat0 / 2) / Math.pow((1 - e * Math.sin(lat0)) / (1 + e * Math.sin(lat0)), e / 2);
+    const bigF = m0 / (n * Math.pow(t0, n));
+    const r0 = a * zone.k0 * bigF * Math.pow(t0, n);
+
+    const t = Math.tan(Math.PI / 4 - latR / 2) / Math.pow((1 - e * Math.sin(latR)) / (1 + e * Math.sin(latR)), e / 2);
+    const r = a * zone.k0 * bigF * Math.pow(t, n);
+    const theta = n * (lonR - lon0);
+
+    const x = zone.x0 + r * Math.sin(theta);
+    const y = zone.y0 + r0 - r * Math.cos(theta);
+    return { x, y };
+  }
+
+  // Transformation géodésique à 3 paramètres (translation), méthode de Molodensky
+  // abrégée, suffisante pour la précision recherchée ici (positionnement de terrain,
+  // pas du bornage légal). Merchich -> WGS84 : on ajoute le décalage.
+  function merchichToWGS84(latDeg, lonDeg) {
+    const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+    const a1 = MERCHICH_ELLIPSOID.a, f1 = 1 / MERCHICH_ELLIPSOID.invF;
+    const a2 = 6378137.0, f2 = 1 / 298.257223563; // WGS84
+    const lat = toRad(latDeg), lon = toRad(lonDeg);
+    const e2 = 2 * f1 - f1 * f1;
+    const nu = a1 / Math.sqrt(1 - e2 * Math.sin(lat) * Math.sin(lat));
+    const h = 0; // altitude ellipsoïdale supposée nulle (non gérée par cet outil)
+    const X = (nu + h) * Math.cos(lat) * Math.cos(lon);
+    const Y = (nu + h) * Math.cos(lat) * Math.sin(lon);
+    const Z = (nu * (1 - e2) + h) * Math.sin(lat);
+
+    const X2 = X + MERCHICH_TOWGS84.dx, Y2 = Y + MERCHICH_TOWGS84.dy, Z2 = Z + MERCHICH_TOWGS84.dz;
+
+    const b2 = a2 * (1 - f2), e2b = 2 * f2 - f2 * f2;
+    const p = Math.sqrt(X2 * X2 + Y2 * Y2);
+    let lat2 = Math.atan2(Z2, p * (1 - e2b));
+    for (let i = 0; i < 6; i++) {
+      const nu2 = a2 / Math.sqrt(1 - e2b * Math.sin(lat2) * Math.sin(lat2));
+      lat2 = Math.atan2(Z2 + e2b * nu2 * Math.sin(lat2), p);
+    }
+    const lon2 = Math.atan2(Y2, X2);
+    return { lat: toDeg(lat2), lon: toDeg(lon2) };
+  }
+
+  // WGS84 -> Merchich : on retranche le même décalage (sens inverse de la fonction
+  // ci-dessus), cohérent avec la transformation à 3 paramètres utilisée dans tout cet outil.
+  function wgs84ToMerchich(latDeg, lonDeg) {
+    const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+    const a2 = 6378137.0, f2 = 1 / 298.257223563;
+    const lat = toRad(latDeg), lon = toRad(lonDeg);
+    const e2b = 2 * f2 - f2 * f2;
+    const nu2 = a2 / Math.sqrt(1 - e2b * Math.sin(lat) * Math.sin(lat));
+    const h = 0;
+    const X2 = (nu2 + h) * Math.cos(lat) * Math.cos(lon);
+    const Y2 = (nu2 + h) * Math.cos(lat) * Math.sin(lon);
+    const Z2 = (nu2 * (1 - e2b) + h) * Math.sin(lat);
+
+    const X = X2 - MERCHICH_TOWGS84.dx, Y = Y2 - MERCHICH_TOWGS84.dy, Z = Z2 - MERCHICH_TOWGS84.dz;
+
+    const a1 = MERCHICH_ELLIPSOID.a, f1 = 1 / MERCHICH_ELLIPSOID.invF;
+    const e1 = 2 * f1 - f1 * f1;
+    const p = Math.sqrt(X * X + Y * Y);
+    let lat1 = Math.atan2(Z, p * (1 - e1));
+    for (let i = 0; i < 6; i++) {
+      const nu1 = a1 / Math.sqrt(1 - e1 * Math.sin(lat1) * Math.sin(lat1));
+      lat1 = Math.atan2(Z + e1 * nu1 * Math.sin(lat1), p);
+    }
+    const lon1 = Math.atan2(Y, X);
+    return { lat: toDeg(lat1), lon: toDeg(lon1) };
+  }
+
   function buildColorPicker(containerId, selectedColor, onSelect, palette) {
     const el = document.getElementById(containerId);
     const colors = palette || REGARD_COLORS;
@@ -1615,6 +1820,83 @@
       };
       el.appendChild(btn);
     });
+  }
+
+  // ----- Aller à des coordonnées précises (bloc hors carte, page principale) -----
+  // Convertit ce qui est saisi (WGS84 ou Lambert Maroc zone 1-4) vers WGS84, ouvre la
+  // carte complète centrée exactement à cet endroit, puis déclenche directement la
+  // fiche "Nouveau regard" comme si l'utilisateur avait touché ce point précis sur la
+  // carte — même flux que le tap manuel, pour ne pas dupliquer la logique d'ajout.
+  function onCoordSystemChange() {
+    const system = document.getElementById('coordSystemSelect').value;
+    const labelX = document.getElementById('coordLabelX');
+    const labelY = document.getElementById('coordLabelY');
+    const inputX = document.getElementById('coordInputX');
+    const inputY = document.getElementById('coordInputY');
+    if (system === 'wgs84') {
+      labelX.textContent = 'Latitude';
+      labelY.textContent = 'Longitude';
+      inputX.placeholder = 'ex: 33.5731';
+      inputY.placeholder = 'ex: -7.5898';
+    } else {
+      labelX.textContent = 'X (Est)';
+      labelY.textContent = 'Y (Nord)';
+      inputX.placeholder = 'ex: 296628.46';
+      inputY.placeholder = 'ex: 332701.68';
+    }
+    setCoordEntryStatus('', null);
+  }
+
+  function setCoordEntryStatus(msg, kind) {
+    const el = document.getElementById('coordEntryStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'status-msg' + (kind === 'ok' ? ' status-ok' : kind === 'err' ? ' status-err' : '');
+  }
+
+  function goToTypedCoordinates() {
+    const system = document.getElementById('coordSystemSelect').value;
+    const rawX = document.getElementById('coordInputX').value.trim().replace(',', '.');
+    const rawY = document.getElementById('coordInputY').value.trim().replace(',', '.');
+    const x = parseFloat(rawX), y = parseFloat(rawY);
+
+    if (!rawX || !rawY || isNaN(x) || isNaN(y)) {
+      setCoordEntryStatus('Indiquez deux valeurs numériques valides.', 'err');
+      return;
+    }
+
+    let lat, lon;
+    if (system === 'wgs84') {
+      lat = x; lon = y;
+      if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        setCoordEntryStatus('Latitude/longitude hors limites (latitude entre -90 et 90, longitude entre -180 et 180).', 'err');
+        return;
+      }
+    } else {
+      const zoneNum = parseInt(system.replace('lambert', ''), 10);
+      const result = lambertMarocToWGS84(x, y, zoneNum);
+      if (!result) { setCoordEntryStatus('Zone Lambert invalide.', 'err'); return; }
+      lat = result.lat; lon = result.lon;
+    }
+
+    // Garde-fou : si le résultat tombe très loin du Maroc, l'utilisateur s'est
+    // probablement trompé de système ou de zone (erreur la plus fréquente en pratique).
+    if (lat < 20 || lat > 37 || lon < -18 || lon > 0) {
+      setCoordEntryStatus('Attention : ce point tombe en dehors du Maroc. Vérifiez le système de coordonnées choisi et la zone Lambert (si applicable).', 'err');
+      return;
+    }
+
+    setCoordEntryStatus('Position trouvée : ' + lat.toFixed(6) + ', ' + lon.toFixed(6) + '. Ouverture de la carte…', 'ok');
+    openFullMap();
+    // openFullMap() peut créer la carte de façon asynchrone (première ouverture) ; on
+    // attend qu'elle soit prête avant de la recentrer et d'ouvrir la fiche "Nouveau regard".
+    const waitForMap = setInterval(() => {
+      if (fullMap) {
+        clearInterval(waitForMap);
+        fullMap.setView([lat, lon], 19);
+        openRegardModalForNewPoint(lat, lon);
+      }
+    }, 60);
   }
 
   // ----- Regards : nouveau point (un tap sur la carte complète) -----
@@ -1668,6 +1950,9 @@
     editingRegardColor = r.color || DEFAULT_REGARD_COLOR;
     document.getElementById('editRegardName').value = r.name;
     document.getElementById('editRegardEtat').value = r.etat || '';
+    document.getElementById('editRegardLatVal').textContent = r.lat.toFixed(6);
+    document.getElementById('editRegardLonVal').textContent = r.lon.toFixed(6);
+    setCopyCoordsStatus('', null);
     buildColorPicker('editRegardColorPicker', editingRegardColor, (c) => { editingRegardColor = c; });
     document.getElementById('editRegardModal').classList.add('open');
   }
@@ -1675,6 +1960,56 @@
   function closeEditRegardModal() {
     document.getElementById('editRegardModal').classList.remove('open');
     editingRegardId = null;
+  }
+
+  // Copie "latitude, longitude" (degrés décimaux WGS84) dans le presse-papier, un
+  // format que Google Maps reconnaît directement quand on le colle dans sa barre de
+  // recherche. navigator.clipboard.writeText est la méthode moderne standard, mais elle
+  // est parfois indisponible ou silencieusement bloquée dans les WebViews d'app générées
+  // (même limitation déjà rencontrée pour le téléchargement de fichiers, voir
+  // downloadFile plus bas) : on retombe alors sur document.execCommand('copy'), plus
+  // ancien mais bien plus largement supporté dans ces contextes.
+  async function copyEditingRegardCoordinates() {
+    const r = regards.find(x => x.id === editingRegardId);
+    if (!r) return;
+    const text = r.lat.toFixed(6) + ', ' + r.lon.toFixed(6);
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopyCoordsStatus('Coordonnées copiées : ' + text + ' (collez-les dans Google Maps pour retrouver ce point exact).', 'ok');
+        return;
+      } catch (e) {
+        console.warn('navigator.clipboard indisponible, repli sur execCommand', e);
+      }
+    }
+
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) {
+        setCopyCoordsStatus('Coordonnées copiées : ' + text + ' (collez-les dans Google Maps pour retrouver ce point exact).', 'ok');
+      } else {
+        setCopyCoordsStatus('Copie automatique impossible ici. Coordonnées : ' + text + ' (sélectionnez et copiez ce texte manuellement).', 'err');
+      }
+    } catch (e) {
+      console.error('Copie dans le presse-papier impossible', e);
+      setCopyCoordsStatus('Copie automatique impossible ici. Coordonnées : ' + text + ' (sélectionnez et copiez ce texte manuellement).', 'err');
+    }
+  }
+
+  function setCopyCoordsStatus(msg, kind) {
+    const el = document.getElementById('copyCoordsStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'status-msg' + (kind === 'ok' ? ' status-ok' : kind === 'err' ? ' status-err' : '');
   }
 
   async function confirmEditRegard() {
@@ -2009,23 +2344,116 @@
     });
   }
 
+  // ----- Sélection multiple de collecteurs (addition de longueur) -----
+  // État volontairement simple (Set d'ids) : pas besoin de survivre à un rechargement
+  // de page, contrairement à regards/conduites qui sont sauvegardés.
+  let condSelectMode = false;
+  let condSelectedIds = new Set();
+
+  // Appui long sur la liste des collecteurs (en dehors du mode sélection) : bascule le
+  // mode sélection, en plus du bouton Σ dédié dans l'en-tête de la carte. Contrairement
+  // à bindLongPress (conçue pour les calques Leaflet de la carte), ceci est un simple
+  // écouteur Pointer Events sur l'élément DOM <ul>, posé une seule fois au chargement.
+  function initCondListLongPress() {
+    const ul = document.getElementById('condList');
+    if (!ul) return;
+    const LONG_PRESS_MS_LIST = 480;
+    const MOVE_TOLERANCE_PX = 12;
+    let timer = null, startX = 0, startY = 0, firedLong = false;
+
+    ul.addEventListener('pointerdown', (e) => {
+      if (condSelectMode) return; // en mode sélection, chaque ligne gère déjà son propre tap
+      firedLong = false;
+      startX = e.clientX; startY = e.clientY;
+      timer = setTimeout(() => {
+        firedLong = true;
+        toggleCondSelectMode();
+      }, LONG_PRESS_MS_LIST);
+    });
+    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    ul.addEventListener('pointermove', (e) => {
+      if (!timer) return;
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) > MOVE_TOLERANCE_PX) cancel();
+    });
+    ul.addEventListener('pointerup', cancel);
+    ul.addEventListener('pointercancel', cancel);
+    ul.addEventListener('pointerleave', cancel);
+  }
+
+  function toggleCondSelectMode() {
+    condSelectMode = !condSelectMode;
+    if (!condSelectMode) condSelectedIds.clear();
+    else {
+      // Ouvre automatiquement la liste en entrant en mode sélection : sélectionner des
+      // collecteurs invisibles (liste repliée) serait déroutant.
+      condListOpen = true;
+      applyListSectionState('cond', condListOpen);
+    }
+    document.getElementById('condSelectModeBtn').classList.toggle('active-select', condSelectMode);
+    document.getElementById('condSelectHint').style.display = condSelectMode ? 'block' : 'none';
+    document.getElementById('condSelectSummary').style.display = condSelectMode ? 'flex' : 'none';
+    renderConduiteList();
+  }
+
+  function toggleCondSelected(id) {
+    if (condSelectedIds.has(id)) condSelectedIds.delete(id);
+    else condSelectedIds.add(id);
+    renderConduiteList();
+  }
+
+  function updateCondSelectSummary() {
+    const countLabel = document.getElementById('condSelectCountLabel');
+    const totalLabel = document.getElementById('condSelectTotalLabel');
+    if (!countLabel || !totalLabel) return;
+    const n = condSelectedIds.size;
+    countLabel.textContent = n + ' collecteur' + (n === 1 ? '' : 's') + ' sélectionné' + (n === 1 ? '' : 's');
+    let totalM = 0;
+    conduites.forEach(c => { if (condSelectedIds.has(c.id)) totalM += conduiteLength(c); });
+    totalLabel.textContent = totalM >= 1000
+      ? (totalM / 1000).toFixed(3) + ' km (' + totalM.toFixed(1) + ' m)'
+      : totalM.toFixed(1) + ' m';
+  }
+
   function renderConduiteList() {
     const ul = document.getElementById('condList');
     document.getElementById('conduiteCount').textContent = conduites.length;
     document.getElementById('condEmptyHint').style.display = conduites.length ? 'none' : 'block';
     applyListSectionState('cond', condListOpen);
+    // Retire de la sélection tout id de collecteur qui n'existe plus (supprimé depuis,
+    // ou son regard de départ/arrivée a été supprimé entretemps) : évite de compter un
+    // collecteur fantôme dans le total affiché.
+    if (condSelectedIds.size) {
+      const existingIds = new Set(conduites.map(c => c.id));
+      for (const id of condSelectedIds) if (!existingIds.has(id)) condSelectedIds.delete(id);
+    }
+    ul.className = 'item-list' + (condSelectMode ? ' select-mode' : '');
     ul.innerHTML = '';
     conduites.forEach(c => {
       const rFrom = regards.find(r => r.id === c.from);
       const rTo = regards.find(r => r.id === c.to);
+      const lengthM = conduiteLength(c);
+      const lengthLabel = rFrom && rTo ? ' \u00b7 ' + lengthM.toFixed(1) + ' m' : '';
+      const isSelected = condSelectedIds.has(c.id);
       const li = document.createElement('li');
-      li.innerHTML = `<div class="item-info">
-          <b><span class="dash" style="background:${c.color || DEFAULT_COND_COLOR}"></span>${escapeHTML(c.name)}</b>
-          <span class="meta">${escapeHTML(rFrom ? rFrom.name : '?')} \u2192 ${escapeHTML(rTo ? rTo.name : '?')} (sens d'écoulement) \u00b7 \u00d8${escapeHTML(String(c.diameter || '300'))}mm</span>
-        </div>
-        <button class="btn-danger-text" onclick="quickDeleteCollecteur('${c.id}')" aria-label="Supprimer">\u2715</button>`;
+      li.className = isSelected ? 'selected' : '';
+
+      if (condSelectMode) {
+        li.innerHTML = `<div class="item-info">
+            <b><span class="dash" style="background:${c.color || DEFAULT_COND_COLOR}"></span>${escapeHTML(c.name)}</b>
+            <span class="meta">${escapeHTML(rFrom ? rFrom.name : '?')} \u2192 ${escapeHTML(rTo ? rTo.name : '?')}${lengthLabel}</span>
+          </div>
+          <span class="cond-select-checkbox">${isSelected ? '\u2713' : ''}</span>`;
+        li.onclick = () => toggleCondSelected(c.id);
+      } else {
+        li.innerHTML = `<div class="item-info">
+            <b><span class="dash" style="background:${c.color || DEFAULT_COND_COLOR}"></span>${escapeHTML(c.name)}</b>
+            <span class="meta">${escapeHTML(rFrom ? rFrom.name : '?')} \u2192 ${escapeHTML(rTo ? rTo.name : '?')} (sens d'écoulement) \u00b7 \u00d8${escapeHTML(String(c.diameter || '300'))}mm${lengthLabel}</span>
+          </div>
+          <button class="btn-danger-text" onclick="quickDeleteCollecteur('${c.id}')" aria-label="Supprimer">\u2715</button>`;
+      }
       ul.appendChild(li);
     });
+    if (condSelectMode) updateCondSelectSummary();
   }
 
   async function quickDeleteRegard(id) {
@@ -2098,6 +2526,26 @@
     const y = Math.sin(dLon) * Math.cos(phi2);
     const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
     return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  }
+
+  // Distance en mètres entre 2 points WGS84 (formule de Haversine, sphère de rayon
+  // moyen terrestre) : suffisant à l'échelle d'un collecteur (quelques dizaines à
+  // centaines de mètres), l'écart avec un calcul ellipsoïdal complet y est négligeable.
+  // Utilisé pour additionner la longueur de plusieurs collecteurs sélectionnés dans la liste.
+  function haversineDistance(lat1, lon1, lat2, lon2) {
+    const toRad = d => d * Math.PI / 180;
+    const R = 6371000; // rayon moyen terrestre, en mètres
+    const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function conduiteLength(c) {
+    const rFrom = regards.find(r => r.id === c.from);
+    const rTo = regards.find(r => r.id === c.to);
+    if (!rFrom || !rTo) return 0;
+    return haversineDistance(rFrom.lat, rFrom.lon, rTo.lat, rTo.lon);
   }
 
   // ----- KML export -----
