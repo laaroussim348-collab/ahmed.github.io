@@ -433,30 +433,35 @@
   </div>
 
   <div class="card locate" id="coordEntryCard">
-    <h2>Aller à des coordonnées précises</h2>
-    <p class="hint">
-      Saisissez des coordonnées connues (relevé GPS externe, plan, procès-verbal de bornage…) pour placer un regard exactement à cet endroit, sans avoir à le repérer visuellement sur la carte.
-    </p>
-    <label>Système de coordonnées</label>
-    <select id="coordSystemSelect" onchange="onCoordSystemChange()">
-      <option value="wgs84">WGS 1984 (latitude / longitude, GPS standard)</option>
-      <option value="lambert1">Lambert Maroc — Zone 1 (Nord)</option>
-      <option value="lambert2">Lambert Maroc — Zone 2 (Sud)</option>
-      <option value="lambert3">Lambert Maroc — Zone 3 (Sahara Nord)</option>
-      <option value="lambert4">Lambert Maroc — Zone 4 (Sahara Sud)</option>
-    </select>
-    <div class="row-two">
-      <div>
-        <label id="coordLabelX">Latitude</label>
-        <input id="coordInputX" type="text" inputmode="decimal" placeholder="ex: 33.5731" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="coord-input-x">
+    <h2>
+      Aller à des coordonnées précises
+      <button class="toggle-list-btn" id="coordEntryToggleBtn" onclick="toggleListSection('coordEntry')" aria-label="Afficher/masquer ce formulaire">+</button>
+    </h2>
+    <div class="collapsible-list" id="coordEntryWrap">
+      <p class="hint">
+        Saisissez des coordonnées connues (relevé GPS externe, plan, procès-verbal de bornage…) pour placer un regard exactement à cet endroit, sans avoir à le repérer visuellement sur la carte.
+      </p>
+      <label>Système de coordonnées</label>
+      <select id="coordSystemSelect" onchange="onCoordSystemChange()">
+        <option value="wgs84">WGS 1984 (latitude / longitude, GPS standard)</option>
+        <option value="lambert1">Lambert Maroc — Zone 1 (Nord)</option>
+        <option value="lambert2">Lambert Maroc — Zone 2 (Sud)</option>
+        <option value="lambert3">Lambert Maroc — Zone 3 (Sahara Nord)</option>
+        <option value="lambert4">Lambert Maroc — Zone 4 (Sahara Sud)</option>
+      </select>
+      <div class="row-two">
+        <div>
+          <label id="coordLabelX">Latitude</label>
+          <input id="coordInputX" type="text" inputmode="decimal" placeholder="ex: 33.5731" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="coord-input-x">
+        </div>
+        <div>
+          <label id="coordLabelY">Longitude</label>
+          <input id="coordInputY" type="text" inputmode="decimal" placeholder="ex: -7.5898" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="coord-input-y">
+        </div>
       </div>
-      <div>
-        <label id="coordLabelY">Longitude</label>
-        <input id="coordInputY" type="text" inputmode="decimal" placeholder="ex: -7.5898" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="coord-input-y">
-      </div>
+      <button class="btn-manhole" onclick="goToTypedCoordinates()">📍 Aller à cet endroit et créer un regard</button>
+      <div class="status-msg" id="coordEntryStatus"></div>
     </div>
-    <button class="btn-manhole" onclick="goToTypedCoordinates()">📍 Aller à cet endroit et créer un regard</button>
-    <div class="status-msg" id="coordEntryStatus"></div>
   </div>
 
   <div class="card">
@@ -2307,22 +2312,28 @@
   // ----- Listes Regards / Collecteurs repliables (façon panneau "Layers" GIS) -----
   // Repliées par défaut pour ne pas avoir à descendre toute la liste pour atteindre
   // l'export quand il y a beaucoup de points déjà saisis.
-  let regardListOpen = false;
-  let condListOpen = false;
+  // Sections repliables de la page principale : chaque entrée associe un nom court à
+  // l'id de son conteneur .collapsible-list et à l'id de son bouton +/−. Passer par une
+  // table plutôt que des if/else séparés évite de dupliquer la logique à chaque nouvelle
+  // carte repliable (regard, collecteur, et maintenant coordEntry).
+  const LIST_SECTIONS = {
+    regard: { wrapId: 'regardListWrap', btnId: 'regardToggleBtn' },
+    cond: { wrapId: 'condListWrap', btnId: 'condToggleBtn' },
+    coordEntry: { wrapId: 'coordEntryWrap', btnId: 'coordEntryToggleBtn' }
+  };
+  const listSectionOpen = { regard: false, cond: false, coordEntry: false };
 
   function toggleListSection(which) {
-    if (which === 'regard') {
-      regardListOpen = !regardListOpen;
-      applyListSectionState('regard', regardListOpen);
-    } else {
-      condListOpen = !condListOpen;
-      applyListSectionState('cond', condListOpen);
-    }
+    if (!(which in LIST_SECTIONS)) return;
+    listSectionOpen[which] = !listSectionOpen[which];
+    applyListSectionState(which, listSectionOpen[which]);
   }
 
   function applyListSectionState(which, isOpen) {
-    const wrap = document.getElementById(which === 'regard' ? 'regardListWrap' : 'condListWrap');
-    const btn = document.getElementById(which === 'regard' ? 'regardToggleBtn' : 'condToggleBtn');
+    const section = LIST_SECTIONS[which];
+    if (!section) return;
+    const wrap = document.getElementById(section.wrapId);
+    const btn = document.getElementById(section.btnId);
     if (wrap) wrap.classList.toggle('open', isOpen);
     if (btn) btn.textContent = isOpen ? '\u2212' : '+';
   }
@@ -2331,7 +2342,7 @@
     const ul = document.getElementById('regardList');
     document.getElementById('regardCount').textContent = regards.length;
     document.getElementById('regardEmptyHint').style.display = regards.length ? 'none' : 'block';
-    applyListSectionState('regard', regardListOpen);
+    applyListSectionState('regard', listSectionOpen.regard);
     ul.innerHTML = '';
     regards.forEach(r => {
       const li = document.createElement('li');
@@ -2386,8 +2397,8 @@
     else {
       // Ouvre automatiquement la liste en entrant en mode sélection : sélectionner des
       // collecteurs invisibles (liste repliée) serait déroutant.
-      condListOpen = true;
-      applyListSectionState('cond', condListOpen);
+      listSectionOpen.cond = true;
+      applyListSectionState('cond', listSectionOpen.cond);
     }
     document.getElementById('condSelectModeBtn').classList.toggle('active-select', condSelectMode);
     document.getElementById('condSelectHint').style.display = condSelectMode ? 'block' : 'none';
@@ -2418,7 +2429,7 @@
     const ul = document.getElementById('condList');
     document.getElementById('conduiteCount').textContent = conduites.length;
     document.getElementById('condEmptyHint').style.display = conduites.length ? 'none' : 'block';
-    applyListSectionState('cond', condListOpen);
+    applyListSectionState('cond', listSectionOpen.cond);
     // Retire de la sélection tout id de collecteur qui n'existe plus (supprimé depuis,
     // ou son regard de départ/arrivée a été supprimé entretemps) : évite de compter un
     // collecteur fantôme dans le total affiché.
