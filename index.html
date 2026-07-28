@@ -2566,19 +2566,7 @@
       '  <Folder>\n    <name>Regards</name>\n';
 
     regards.forEach(r => {
-      // On ajoute aussi, dans la description du regard lui-même, la liste des
-      // collecteurs qui y sont raccordés (nom + diamètre) : certains convertisseurs
-      // KML -> DXF (AutoCAD) n'exportent le texte QUE pour les Placemarks de type
-      // Point directement liés à une entité, donc dupliquer l'info ici garantit
-      // qu'elle reste visible à côté du regard même si le point d'étiquette du
-      // collecteur (au milieu du tracé) est filtré par la conversion.
-      const relatedConduites = conduites.filter(c => c.from === r.id || c.to === r.id);
-      let desc = 'Etat: ' + (r.etat || '-');
-      if (relatedConduites.length > 0) {
-        desc += '\nCollecteurs relies: ' + relatedConduites.map(c =>
-          c.name + ' (Ø' + (c.diameter || '-') + 'mm)'
-        ).join(', ');
-      }
+      const desc = 'Etat: ' + (r.etat || '-');
       const kmlColor = hexToKmlColor(r.color || DEFAULT_REGARD_COLOR);
       // Style défini directement dans le Placemark (au lieu d'un styleUrl partagé) :
       // chaque regard garde ainsi SA propre couleur choisie dans l'app.
