@@ -65,19 +65,19 @@ raccourcis distincts — voir `scripts/build-essai.mjs`).
 
 ## Licences — configuration (obligatoire avant toute distribution)
 
-1. Ouvrez `admin/licences-admin.html` dans un navigateur.
-2. Suivez le panneau **Configuration** en bas de page : créez un Google
-   Sheet, déployez le Google Apps Script fourni, choisissez **votre propre**
-   clé d'administration.
-3. Collez l'URL du script dans `license-config.json` (à la racine) **et**
-   dans le champ "URL Google Apps Script" de l'outil admin.
+1. Ouvrez `admin/licences-admin.html` dans un navigateur — l'URL du Google
+   Apps Script est déjà pré-remplie (`license-config.json` et
+   `DEFAULT_GS_URL` pointent vers le déploiement de l'éditeur).
+2. Saisissez votre **clé d'administration** dans le champ dédié de l'outil
+   admin (elle doit être identique à `ADMIN_KEY` dans le script déployé —
+   voir le panneau **Configuration** en bas de page pour la retrouver ou en
+   définir une nouvelle).
 
-> ⚠️ **Aucune URL ni clé n'est pré-remplie** dans ce dépôt, volontairement :
-> les identifiants réels utilisés par les anciens outils BV-Calc / GRADEX
-> ne doivent jamais être copiés dans ce produit fusionné (ni commités dans
-> un dépôt public) — ils resteraient valables pour n'importe qui les
-> retrouverait, ce qui viderait le système de licence de son sens. Générez
-> un déploiement neuf.
+> ⚠️ **La clé d'administration n'est jamais commitée dans ce dépôt** — elle
+> reste uniquement dans le stockage local de votre navigateur une fois
+> saisie dans l'outil admin. Les identifiants des anciens outils BV-Calc /
+> GRADEX (distincts de ceux ci-dessus) ne doivent jamais être réutilisés
+> pour ce produit fusionné.
 
 Le mode essai 24h (`npm run dist:essai`) ne passe jamais par ce système : il
 s'auto-active dès le premier lancement, sans code ni connexion, pendant 24h,

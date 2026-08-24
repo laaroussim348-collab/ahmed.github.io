@@ -18,13 +18,14 @@
   serveur de GRADEX (src/services/machineId.js) et qu'affiche l'écran
   d'activation (src/licence/LicenceGate.js).
 
-  ⚠️ SÉCURITÉ — avant de distribuer GRADEX à un client, déployez VOTRE PROPRE
-  copie du Google Apps Script ci-dessous (panneau "Configuration" en bas de
-  page) et choisissez UNE NOUVELLE clé d'administration. Aucune URL ni clé
-  n'est pré-remplie ici volontairement : les valeurs par défaut utilisées par
-  les anciens outils BV-Calc / GRADEX ne doivent JAMAIS être réutilisées pour
-  ce produit fusionné (elles restent valables uniquement pour les clients déjà
-  activés sur ces anciens produits).
+  ⚠️ SÉCURITÉ — L'URL Google Apps Script ci-dessous (DEFAULT_GS_URL) est le
+  déploiement propre à ce produit, fourni par l'éditeur. La clé
+  d'administration N'EST PAS pré-remplie (elle n'est jamais stockée dans ce
+  dépôt) : saisissez-la manuellement dans le champ "Clé d'administration" —
+  elle doit être identique à ADMIN_KEY dans le script déployé. Les valeurs
+  par défaut des anciens outils BV-Calc / GRADEX ne doivent JAMAIS être
+  réutilisées pour ce produit fusionné (elles restent valables uniquement
+  pour les clients déjà activés sur ces anciens produits).
 -->
 <style>
 :root{
@@ -143,9 +144,9 @@ tr:hover td{background:var(--paper)}
 <div class="wrap">
 
   <div class="warn" style="margin-bottom:18px">
-    ⚠️ <b>Avant toute distribution à un client :</b> déployez votre propre copie du Google Apps Script (panneau
-    "Configuration" tout en bas) et choisissez une <b>nouvelle</b> clé d'administration. Ne réutilisez jamais les
-    URL/clés d'un ancien déploiement BV-Calc ou GRADEX pour ce produit fusionné.
+    ⚠️ <b>Clé d'administration :</b> saisissez-la ci-dessous (champ "Clé d'administration") — elle n'est jamais
+    stockée dans le dépôt du projet, seulement dans le stockage local de ce navigateur. Voir le panneau
+    "Configuration" tout en bas pour retrouver ou modifier le script Google Apps Script déployé.
   </div>
 
   <div class="stats">
@@ -474,7 +475,7 @@ const CFG_KEY = "gradex_lic_cfg_v1";
 // déployez votre propre script + choisissez votre propre clé avant de
 // distribuer GRADEX. Ne pas réutiliser les valeurs des anciens outils
 // BV-Calc / GRADEX.
-const DEFAULT_GS_URL = "";
+const DEFAULT_GS_URL = "https://script.google.com/macros/s/AKfycbxdXrHXBucUZvmwXU2BchlDlof6HRtQWc-CE8uUdAKCPdL4yfl1tVryxY_96Gr5tb1z/exec";
 const DEFAULT_ADMIN_KEY = "";
 let db = [], cfg = { gsUrl:"", adminKey:"" };
 let searchVisible = false, currentGen = null;
