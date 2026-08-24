@@ -58,6 +58,7 @@
     "wait-on": "^9.0.10"
   },
   "build": {
+    "extends": null,
     "appId": "com.gradexsuite.app",
     "productName": "GRADEX",
     "files": [
