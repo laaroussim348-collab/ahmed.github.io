@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRADEX — Gestionnaire de Licences</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M20 3 L35 30 A17 17 0 0 1 5 30 Z' fill='%2316283a'/%3E%3Cpath d='M12 24 Q20 17 28 24' fill='none' stroke='%231e7a72' stroke-width='2.6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  admin/licences-admin.html — Outil d'administration UNIFIÉ des licences GRADEX.
+  ─────────────────────────────────────────────────────────────────────────────
+  Fusionne les deux outils d'origine (bv-calc-licences-admin.html, IDENTIFIANT
+  MACHINE, et KeyGen_GRADEX.html, IP) sur UN SEUL schéma : l'Identifiant
+  Machine de BV-Calc (SHA-256 des adresses MAC — beaucoup plus fiable qu'une
+  IP, qui change et ne distingue pas 2 postes derrière le même routeur de
+  bureau). C'est le même identifiant que produit obtenirMachineId() côté
+  serveur de GRADEX (src/services/machineId.js) et qu'affiche l'écran
+  d'activation (src/licence/LicenceGate.js).
+
+  ⚠️ SÉCURITÉ — avant de distribuer GRADEX à un client, déployez VOTRE PROPRE
+  copie du Google Apps Script ci-dessous (panneau "Configuration" en bas de
+  page) et choisissez UNE NOUVELLE clé d'administration. Aucune URL ni clé
+  n'est pré-remplie ici volontairement : les valeurs par défaut utilisées par
+  les anciens outils BV-Calc / GRADEX ne doivent JAMAIS être réutilisées pour
+  ce produit fusionné (elles restent valables uniquement pour les clients déjà
+  activés sur ces anciens produits).
+-->
+<style>
+:root{
+  --ink:#16283a; --ink-soft:#3c5164; --paper:#f2f3ef; --paper-raised:#ffffff;
+  --line:#d7d9d1; --line-strong:#b9beb1;
+  --water:#1e7a72; --water-dark:#145a54; --water-tint:#e3f0ee;
+  --contour:#8a6a3a; --contour-tint:#f2ead9;
+  --warn:#a6612a; --warn-tint:#faedde;
+  --error:#a6392a; --error-tint:#f9e3df;
+  --ok:#2f6b4f; --ok-tint:#e4f0e9;
+  --font-display:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono','Consolas',monospace;
+  --radius:3px;
+  --shadow:0 1px 2px rgba(22,40,58,.08),0 4px 14px rgba(22,40,58,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-display);background:var(--paper);color:var(--ink);min-height:100vh;font-size:15px;line-height:1.5}
+.hdr{background:var(--ink);color:#eef1ee;padding:16px 28px;border-bottom:3px solid var(--water);
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.hdr-mark{display:flex;align-items:center;gap:12px}
+.hdr h1{font-size:19px;font-weight:600;letter-spacing:.01em}
+.hdr .sub{font-size:11.5px;opacity:.75;margin-top:3px}
+.badge{font-size:11px;background:rgba(255,255,255,.12);padding:4px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.18)}
+.wrap{max-width:1300px;margin:22px auto;padding:0 16px 60px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.stat{background:var(--paper-raised);border-radius:var(--radius);padding:16px;text-align:center;box-shadow:var(--shadow)}
+.stat-v{font-size:26px;font-weight:700;color:var(--water-dark);font-family:var(--font-mono)}
+.stat-l{font-size:10.5px;color:var(--ink-soft);margin-top:4px;text-transform:uppercase;letter-spacing:.05em}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:900px){.g2,.stats{grid-template-columns:1fr}}
+.panel{background:var(--paper-raised);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
+.panel-hd{background:var(--paper);padding:12px 18px;border-bottom:1px solid var(--line);font-weight:600;
+  font-size:13.5px;color:var(--ink);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel-bd{padding:18px}
+label{display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:4px}
+input[type=text],input[type=number],select,textarea{width:100%;padding:9px 11px;font-family:inherit;
+  border:1px solid var(--line-strong);border-radius:var(--radius);font-size:13px;transition:border .2s,box-shadow .2s;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--water);box-shadow:0 0 0 3px rgba(30,122,114,.12)}
+.field{margin-bottom:13px}
+.field small{font-size:10.5px;color:#8b95a1;display:block;margin-top:4px;line-height:1.6}
+.btn{padding:9px 18px;border:1px solid transparent;border-radius:var(--radius);font-size:12.5px;font-weight:600;
+  cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s;font-family:inherit}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:var(--water);color:#fff}.btn-primary:hover:not(:disabled){background:var(--water-dark)}
+.btn-ok{background:var(--ok);color:#fff}.btn-ok:hover:not(:disabled){background:#245a41}
+.btn-danger{background:var(--error);color:#fff}.btn-danger:hover:not(:disabled){background:#8a2f22}
+.btn-ghost{background:none;border-color:var(--line-strong);color:var(--ink-soft)}.btn-ghost:hover:not(:disabled){border-color:var(--water);color:var(--water-dark)}
+.btn-sm{padding:5px 11px;font-size:11px}
+.btn-full{width:100%;justify-content:center;padding:11px}
+.code-box{background:var(--water-tint);border:1px solid var(--water);border-radius:var(--radius);padding:14px 50px 14px 14px;
+  font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--water-dark);word-break:break-all;
+  text-align:center;position:relative;letter-spacing:.5px;margin:12px 0}
+.code-copy{position:absolute;top:8px;right:8px;background:var(--water);color:#fff;border:none;
+  padding:4px 10px;border-radius:var(--radius);font-size:10px;cursor:pointer;font-family:inherit}
+.code-copy:hover{background:var(--water-dark)}
+.info{background:var(--ok-tint);border:1px solid #b7d9c6;border-radius:var(--radius);padding:10px 12px;
+  font-size:11.5px;color:var(--ok);margin-bottom:12px;line-height:1.7}
+.warn{background:var(--warn-tint);border:1px solid #e8c397;border-radius:var(--radius);padding:10px 12px;
+  font-size:11.5px;color:var(--warn);margin-bottom:12px;line-height:1.7}
+.err{background:var(--error-tint);border:1px solid #eab4ab;border-radius:var(--radius);padding:10px 12px;
+  font-size:11.5px;color:var(--error);margin-bottom:12px;line-height:1.7}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+th{background:var(--paper);padding:9px 10px;text-align:left;font-weight:600;color:var(--ink-soft);
+  border-bottom:2px solid var(--line);white-space:nowrap;text-transform:uppercase;font-size:10px;letter-spacing:.04em}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:hover td{background:var(--paper)}
+.mono{font-family:var(--font-mono);font-size:10.5px}
+.badge2{padding:2px 9px;border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap}
+.b-act{background:var(--ok-tint);color:var(--ok)}
+.b-rev{background:var(--error-tint);color:var(--error)}
+.b-exp{background:var(--warn-tint);color:var(--warn)}
+.b-ina{background:var(--paper);color:var(--ink-soft);border:1px solid var(--line)}
+.actions{display:flex;gap:4px;flex-wrap:wrap}
+.empty{text-align:center;padding:40px;color:#9aa5af;font-size:13px}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(22,40,58,.55);align-items:center;justify-content:center;z-index:1000}
+.modal-bg.show{display:flex}
+.modal{background:#fff;border-radius:6px;padding:26px;max-width:440px;width:92%;box-shadow:0 20px 60px rgba(22,40,58,.3)}
+.modal h3{margin-bottom:10px;font-size:16px}
+.modal p{font-size:13px;color:var(--ink-soft);line-height:1.7;margin-bottom:16px}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end}
+.steps .step{display:flex;gap:12px;margin-bottom:14px;align-items:flex-start}
+.step-num{background:var(--water);color:#fff;border-radius:50%;width:24px;height:24px;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:1px;font-family:var(--font-mono)}
+.step-txt{font-size:12px;line-height:1.7;color:var(--ink-soft)}
+.step-txt b{color:var(--ink)}
+.step-txt code{background:var(--paper);padding:1px 6px;border-radius:3px;font-family:var(--font-mono);font-size:11px;color:var(--water-dark)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);
+  color:#fff;padding:10px 22px;border-radius:6px;font-size:12px;z-index:9999;
+  animation:fadeUp .3s;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+@keyframes fadeUp{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
+.toolbar{display:flex;gap:7px;flex-wrap:wrap}
+.gs-box{background:var(--contour-tint);border:1px solid #d3b98a;border-radius:var(--radius);padding:12px;margin-bottom:14px}
+.gs-box label{color:var(--contour);margin-bottom:5px}
+.gs-box input{border-color:#d3b98a;font-family:var(--font-mono);font-size:11px}
+.gs-box .field{margin-bottom:10px}
+.gs-box .field:last-child{margin-bottom:0}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-mark">
+    <svg viewBox="0 0 40 40" width="30" height="30" style="flex-shrink:0">
+      <path d="M20 3 L35 30 A17 17 0 0 1 5 30 Z" fill="none" stroke="#eef1ee" stroke-width="2.4"/>
+      <path d="M12 24 Q20 17 28 24" fill="none" stroke="#1e7a72" stroke-width="2.6"/>
+    </svg>
+    <div>
+      <h1>GRADEX &mdash; Gestionnaire de Licences</h1>
+      <div class="sub">Contrôle d'activation &mdash; Identifiant Machine + Google Sheets (outil unifié BV-Calc + GRADEX)</div>
+    </div>
+  </div>
+  <div class="badge">v1 &mdash; En ligne</div>
+</div>
+
+<div class="wrap">
+
+  <div class="warn" style="margin-bottom:18px">
+    ⚠️ <b>Avant toute distribution à un client :</b> déployez votre propre copie du Google Apps Script (panneau
+    "Configuration" tout en bas) et choisissez une <b>nouvelle</b> clé d'administration. Ne réutilisez jamais les
+    URL/clés d'un ancien déploiement BV-Calc ou GRADEX pour ce produit fusionné.
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-v" id="sTotal">0</div><div class="stat-l">Total</div></div>
+    <div class="stat"><div class="stat-v" id="sActive" style="color:var(--ok)">0</div><div class="stat-l">Actives</div></div>
+    <div class="stat"><div class="stat-v" id="sRevoked" style="color:var(--error)">0</div><div class="stat-l">Révoquées</div></div>
+    <div class="stat"><div class="stat-v" id="sExpired" style="color:var(--warn)">0</div><div class="stat-l">Expirées</div></div>
+  </div>
+
+  <div class="g2">
+
+    <!-- GÉNÉRATION -->
+    <div class="panel">
+      <div class="panel-hd">🔧 Générer un code d'activation</div>
+      <div class="panel-bd">
+
+        <div class="gs-box">
+          <div class="field">
+            <label>🔗 URL Google Apps Script (obligatoire)</label>
+            <input type="text" id="gsUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" oninput="saveConfig()">
+          </div>
+          <div class="field">
+            <label>🔑 Clé d'administration (doit être identique à ADMIN_KEY dans le script)</label>
+            <input type="text" id="adminKey" placeholder="Clé secrète" oninput="saveConfig()">
+          </div>
+          <small style="color:var(--contour)">Voir le panneau "Configuration" en bas de page pour créer le script gratuit et définir cette clé.</small>
+        </div>
+
+        <div class="field">
+          <label>💻 Identifiant Machine du poste client</label>
+          <input type="text" id="machineIdInput" placeholder="Ex: 4F2A-9B10-EE31-0C7D"
+            oninput="this.value=this.value.replace(/[^0-9A-Fa-f-]/g,'').toUpperCase()">
+          <small>Le client voit cet identifiant sur l'écran d'activation de GRADEX, avec un bouton Copier.</small>
+        </div>
+
+        <div class="field">
+          <label>👤 Nom du client / Bureau d'études</label>
+          <input type="text" id="clientName" placeholder="Ex: Cabinet Hydraulique Alami">
+        </div>
+
+        <div class="field">
+          <label>📅 Durée d'activation</label>
+          <select id="durSel" onchange="toggleCustom()">
+            <option value="30">30 jours</option>
+            <option value="90">90 jours (3 mois)</option>
+            <option value="180">180 jours (6 mois)</option>
+            <option value="365" selected>365 jours (1 an)</option>
+            <option value="730">730 jours (2 ans)</option>
+            <option value="0">Permanent</option>
+            <option value="custom">Personnalisé…</option>
+          </select>
+        </div>
+        <div class="field" id="customBox" style="display:none">
+          <label>Nombre de jours</label>
+          <input type="number" id="customDays" value="30" min="1">
+        </div>
+
+        <div class="field">
+          <label>📝 Note (optionnel)</label>
+          <input type="text" id="noteInput" placeholder="Ex: Renouvellement, projet barrage Ighi">
+        </div>
+
+        <button class="btn btn-primary btn-full" onclick="doGenerate()">
+          🔒 Générer &amp; préparer le code
+        </button>
+
+        <div id="genResult" style="display:none;margin-top:14px">
+          <div class="code-box">
+            <button class="code-copy" onclick="copyCode()">📋 Copier</button>
+            <span id="genCode"></span>
+          </div>
+          <div class="info" id="genInfo"></div>
+          <button class="btn btn-full btn-ok" onclick="syncToSheets()" id="syncBtn" style="margin-bottom:8px">
+            ☁️ Synchroniser vers Google Sheets (activer)
+          </button>
+          <div id="syncMsg" style="font-size:11.5px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AIDE -->
+    <div>
+      <div class="panel">
+        <div class="panel-hd">🔍 Vérifier / Modifier une licence</div>
+        <div class="panel-bd">
+          <div class="field">
+            <label>Code à vérifier ou modifier</label>
+            <input type="text" id="verifyCode" placeholder="GDX-XXXXXX-XXXXXX">
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="doVerify()">Vérifier</button>
+            <button class="btn btn-danger btn-sm" onclick="doRevoke()">🔴 Révoquer</button>
+            <button class="btn btn-ok btn-sm" onclick="doReactivate()">🟢 Réactiver</button>
+          </div>
+          <div id="verifyResult"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hd">📋 Mode d'emploi rapide</div>
+        <div class="panel-bd">
+          <div class="steps">
+            <div class="step"><div class="step-num">1</div>
+              <div class="step-txt">Le client lance <b>GRADEX</b> (application de bureau) → l'écran d'activation affiche son <b>Identifiant Machine</b> en grand, avec un bouton Copier.</div>
+            </div>
+            <div class="step"><div class="step-num">2</div>
+              <div class="step-txt">Il vous envoie cet identifiant (ex : <code>4F2A-9B10-EE31-0C7D</code>). Collez-le dans le champ Identifiant Machine ci-contre.</div>
+            </div>
+            <div class="step"><div class="step-num">3</div>
+              <div class="step-txt">Remplissez le nom du client, choisissez la durée, puis <b>Générer</b>.</div>
+            </div>
+            <div class="step"><div class="step-num">4</div>
+              <div class="step-txt">Cliquez <b>Synchroniser vers Google Sheets</b> → le code devient actif immédiatement.</div>
+            </div>
+            <div class="step"><div class="step-num">5</div>
+              <div class="step-txt">Envoyez le code au client → il l'entre sur l'écran d'activation → <b>Activer ce poste</b>.</div>
+            </div>
+            <div class="step"><div class="step-num">6</div>
+              <div class="step-txt">Pour bloquer : cliquez <b>Révoquer</b>. Le blocage prend effet au <b>prochain contrôle</b> de GRADEX sur ce poste (contrôle toutes les 60s si le poste est ouvert ; jusqu'à 7 jours de grâce si le poste était hors-ligne).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hd">⏱ Version d'essai 24h</div>
+        <div class="panel-bd" style="font-size:12px;line-height:1.8;color:var(--ink-soft)">
+          La build d'essai (<code>npm run dist:essai</code>, voir README du projet GRADEX) ne passe <b>jamais</b> par
+          ce gestionnaire de licences : elle s'auto-active 24h à partir du premier lancement, sans code ni compte
+          Google Sheets, puis se verrouille définitivement. Utilisez cet outil uniquement pour la version vendue
+          (licence par code).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JOURNAL -->
+  <div class="panel">
+    <div class="panel-hd">
+      <span>📊 Journal des licences (<span id="jCount">0</span>)</span>
+      <div class="toolbar">
+        <button class="btn btn-ghost btn-sm" onclick="doExport()">📥 Exporter JSON</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📤 Importer</button>
+        <input type="file" id="impFile" accept=".json" style="display:none" onchange="doImport(event)">
+        <button class="btn btn-ghost btn-sm" onclick="doSearch()">🔍 Rechercher</button>
+        <button class="btn btn-ghost btn-sm" onclick="syncAll()">☁️ Sync All</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmClear()">🗑️ Effacer tout</button>
+      </div>
+    </div>
+    <div id="searchBar" style="display:none;padding:10px 18px;border-bottom:1px solid var(--line)">
+      <input type="text" id="searchInput" placeholder="Rechercher par client, identifiant machine, code…" oninput="renderTable()" style="max-width:400px">
+    </div>
+    <div id="tableWrap"><div class="empty">Aucune licence enregistrée</div></div>
+  </div>
+
+  <!-- CONFIG -->
+  <div class="panel">
+    <div class="panel-hd">⚙️ Configuration Google Sheets — Instructions complètes</div>
+    <div class="panel-bd" style="font-size:12px;line-height:1.9">
+
+      <div class="warn">
+        <b>Prérequis :</b> un compte Google (Gmail). Tout est gratuit.
+        Le script Google Apps Script sert de serveur de vérification pour GRADEX (routes appelées par
+        <code>src/services/licenseClient.js</code>, exactement comme pour BV-Calc — ce mécanisme n'a pas changé).
+      </div>
+
+      <b>Étape 1 — Créer le Google Sheet</b>
+      <ol style="margin:8px 0 14px 18px">
+        <li>Ouvrez <a href="https://sheets.google.com" target="_blank" style="color:var(--water-dark)">sheets.google.com</a> → Nouveau classeur</li>
+        <li>Nommez-le <b>GRADEX_Licences</b></li>
+        <li>En ligne 1, créez ces colonnes exactement :
+          <code style="display:block;background:var(--paper);padding:6px 10px;border-radius:3px;font-size:11px;margin:6px 0">
+            A: code &nbsp;&nbsp; B: machineId &nbsp;&nbsp; C: client &nbsp;&nbsp; D: days &nbsp;&nbsp; E: status &nbsp;&nbsp; F: createdAt &nbsp;&nbsp; G: note
+          </code>
+        </li>
+      </ol>
+
+      <b>Étape 2 — Créer le Google Apps Script</b>
+      <ol style="margin:8px 0 8px 18px">
+        <li>Dans votre Sheet → menu <b>Extensions → Apps Script</b></li>
+        <li>Effacez tout le contenu existant et collez ce code :</li>
+      </ol>
+
+      <div style="position:relative;margin-bottom:8px">
+        <button class="code-copy" onclick="copyScript()" style="position:absolute;top:6px;right:6px;z-index:1">📋 Copier</button>
+        <textarea id="gsCode" readonly rows="34"
+          style="width:100%;font-family:'IBM Plex Mono',monospace;font-size:10.5px;background:#16283a;
+            color:#a8d8c8;border:none;border-radius:6px;padding:14px;resize:none;line-height:1.7">
+const SHEET_NAME = "Feuille 1"; // Adaptez si votre feuille a un nom différent
+const ADMIN_KEY  = "__ADMIN_KEY__"; // Doit être identique au champ "Clé d'administration" de cet outil — changez-la si besoin, mais dans les DEUX endroits à la fois
+
+const JOURS_LICENCE_PERMANENTE = 36500; // ~100 ans : permet d'afficher une date d'expiration même pour une licence "Permanent" (days=0)
+
+function doGet(e) {
+  const p      = e.parameter;
+  const action = p.action || "";
+  const sheet  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const data   = sheet.getDataRange().getValues();
+
+  // ── VERIFY : appelé par GRADEX à chaque démarrage puis toutes les 60s. Aucune clé requise. ──
+  // Si machineId est vide (vérification manuelle depuis l'outil admin), le
+  // contrôle de correspondance machine est ignoré et seul le statut brut du
+  // code est renvoyé.
+  if (action === "verify") {
+    const code      = (p.code || "").trim().toUpperCase();
+    const machineId = (p.machineId || "").trim().toUpperCase();
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if ((row[0] || "").toString().trim().toUpperCase() !== code) continue;
+
+      const status  = (row[4] || "active").toString().toLowerCase();
+      const days    = parseInt(row[3]) || 0;
+      const created = new Date(row[5]);
+      const client  = row[2] || "";
+
+      if (status === "revoked") {
+        return out({ valid:false, erreur:"Licence révoquée par l'éditeur.", status:"revoked" });
+      }
+
+      if (machineId && row[1] && row[1].toString().trim().toUpperCase() !== machineId) {
+        return out({ valid:false, erreur:"Ce code est assigné à un autre poste.", status:"wrong_machine" });
+      }
+
+      const exp = days > 0
+        ? new Date(created.getTime() + days * 86400000)
+        : new Date(created.getTime() + JOURS_LICENCE_PERMANENTE * 86400000);
+
+      if (days > 0 && new Date() > exp) {
+        sheet.getRange(i + 1, 5).setValue("expired");
+        return out({ valid:false, erreur:"Licence expirée. Contactez l'éditeur.", status:"expired" });
+      }
+
+      return out({ valid:true, status:"active", client:client, expiresAt: exp.toISOString() });
+    }
+    return out({ valid:false, erreur:"Code introuvable.", status:"not_found" });
+  }
+
+  // ── ADD : enregistre une nouvelle licence. Clé admin requise. ──
+  if (action === "add") {
+    if (p.key !== ADMIN_KEY) return out({ success:false, message:"Non autorisé (clé admin incorrecte)." });
+    sheet.appendRow([
+      (p.code      || "").toUpperCase(),
+      (p.machineId || "").toUpperCase(),
+      (p.client    || ""),
+      parseInt(p.days) || 365,
+      "active",
+      new Date().toISOString(),
+      (p.note      || "")
+    ]);
+    return out({ success: true });
+  }
+
+  // ── REVOKE / REACTIVATE. Clé admin requise. ──
+  if (action === "revoke") {
+    if (p.key !== ADMIN_KEY) return out({ success:false, message:"Non autorisé (clé admin incorrecte)." });
+    const code  = (p.code   || "").trim().toUpperCase();
+    const newSt = (p.status || "revoked");
+    for (let i = 1; i < data.length; i++) {
+      if ((data[i][0] || "").toString().trim().toUpperCase() === code) {
+        sheet.getRange(i + 1, 5).setValue(newSt);
+        return out({ success: true });
+      }
+    }
+    return out({ success: false, message: "Code non trouvé." });
+  }
+
+  return out({ error: "Action inconnue : " + action });
+}
+
+function out(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+        </textarea>
+      </div>
+      <p class="hint" style="font-size:11px;color:var(--ink-soft);margin-bottom:14px">
+        Le bouton Copier colle automatiquement la clé d'administration actuellement saisie ci-dessus à la place de <code>__ADMIN_KEY__</code>.
+      </p>
+
+      <ol start="3" style="margin:0 0 14px 18px">
+        <li>Cliquez <b>Déployer → Nouveau déploiement</b></li>
+        <li>Type : <b>Application Web</b></li>
+        <li>Exécuter en tant que : <b>Moi</b></li>
+        <li>Qui a accès : <b>Tout le monde</b> (nécessaire pour que GRADEX puisse vérifier)</li>
+        <li>Cliquez <b>Déployer</b> → autorisez les permissions demandées</li>
+        <li>Copiez l'URL affichée (commence par <code>https://script.google.com/macros/s/</code>) et collez-la dans le champ <b>URL Google Apps Script</b> en haut de cette page</li>
+      </ol>
+
+      <b>Étape 4 — Configurer chaque copie de GRADEX distribuée</b>
+      <ol style="margin:8px 0 14px 18px">
+        <li>Dans le projet GRADEX, ouvrez le fichier <code>license-config.json</code> (à la racine) et vérifiez que <code>licenseServerUrl</code> contient bien la même URL que ci-dessus</li>
+        <li>Ce fichier fait partie des sources livrées à chaque client (embarqué dans l'archive .asar Electron) — la même URL est utilisée pour tous les postes, seul l'Identifiant Machine change</li>
+      </ol>
+
+      <div class="info">
+        ✓ Une fois configuré : chaque démarrage de GRADEX (et chaque contrôle périodique, toutes les 60s) contacte
+        votre Google Sheet. Si vous modifiez le code du script après un premier déploiement, utilisez
+        <b>Déployer → Gérer les déploiements → ✏️ → Nouvelle version</b> pour que les changements prennent effet
+        (l'URL reste la même). En cas de coupure réseau, le poste client garde l'accès <b>jusqu'à 7 jours</b> depuis
+        sa dernière vérification réussie (tolérance hors-ligne), puis se bloque automatiquement si le serveur reste
+        injoignable.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal -->
+<div class="modal-bg" id="modalConfirm" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="modalTitle">Confirmation</h3>
+    <p id="modalText"></p>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-danger btn-sm" id="modalOk">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB_KEY  = "gradex_lic_db_v1";
+const CFG_KEY = "gradex_lic_cfg_v1";
+// Volontairement VIDES (voir avertissement de sécurité en tête de page) :
+// déployez votre propre script + choisissez votre propre clé avant de
+// distribuer GRADEX. Ne pas réutiliser les valeurs des anciens outils
+// BV-Calc / GRADEX.
+const DEFAULT_GS_URL = "";
+const DEFAULT_ADMIN_KEY = "";
+let db = [], cfg = { gsUrl:"", adminKey:"" };
+let searchVisible = false, currentGen = null;
+
+// ── Config ────────────────────────────────────────────────────
+function loadConfig() {
+  try { cfg = JSON.parse(localStorage.getItem(CFG_KEY)) || null; } catch { cfg = null; }
+  if (!cfg) cfg = { gsUrl: DEFAULT_GS_URL, adminKey: DEFAULT_ADMIN_KEY };
+  document.getElementById("gsUrl").value = cfg.gsUrl || "";
+  document.getElementById("adminKey").value = cfg.adminKey || "";
+}
+function saveConfig() {
+  cfg.gsUrl = document.getElementById("gsUrl").value.trim();
+  cfg.adminKey = document.getElementById("adminKey").value.trim();
+  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+}
+
+// ── BD ────────────────────────────────────────────────────────
+function loadDB() {
+  try { db = JSON.parse(localStorage.getItem(DB_KEY)) || []; } catch { db = []; }
+}
+function saveDB() { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+
+// ── Génération ────────────────────────────────────────────────
+function genCode(machineId) {
+  let h = 0x5F3759DF;
+  for (let i = 0; i < machineId.length; i++) h = ((h << 5) - h + machineId.charCodeAt(i)) | 0;
+  const hash = Math.abs(h).toString(36).toUpperCase().padStart(6,"0").slice(-6);
+  const rand  = Math.random().toString(36).slice(2).toUpperCase().padStart(6,"0").slice(-6);
+  return "GDX-" + hash + "-" + rand;
+}
+
+function doGenerate() {
+  const machineId = document.getElementById("machineIdInput").value.trim();
+  const client = document.getElementById("clientName").value.trim();
+  const note   = document.getElementById("noteInput").value.trim();
+  if (!machineId) { showToast("Entrez l'identifiant machine du client."); return; }
+  if (!/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/.test(machineId)) {
+    showToast("Format invalide. Exemple : 4F2A-9B10-EE31-0C7D"); return;
+  }
+  if (!client) { showToast("Entrez le nom du client."); return; }
+  let days = parseInt(document.getElementById("durSel").value);
+  if (document.getElementById("durSel").value === "custom")
+    days = parseInt(document.getElementById("customDays").value) || 30;
+
+  const code = genCode(machineId);
+  currentGen = { code, machineId, client, days, note, status:"pending", createdAt:new Date().toISOString(), synced:false };
+
+  document.getElementById("genCode").textContent = code;
+  const expTxt = days === 0 ? "Permanent"
+    : days + " jours — expire le " + new Date(Date.now()+days*86400000).toLocaleDateString("fr-FR");
+  document.getElementById("genInfo").innerHTML =
+    "Code préparé pour <b>" + esc(client) + "</b> (Machine : <b>" + machineId + "</b>)<br>" +
+    "Validité : <b>" + expTxt + "</b><br>" +
+    "Cliquez <b>Synchroniser</b> pour l'activer dans Google Sheets.";
+  document.getElementById("genResult").style.display = "block";
+  document.getElementById("syncMsg").textContent = "";
+}
+
+function copyCode() {
+  if (!currentGen) return;
+  navigator.clipboard.writeText(currentGen.code).then(()=>showToast("Code copié !"));
+}
+
+async function syncToSheets() {
+  if (!currentGen) return;
+  const url = document.getElementById("gsUrl").value.trim();
+  const key = document.getElementById("adminKey").value.trim();
+  if (!url || !url.includes("script.google.com")) {
+    showToast("Configurez d'abord l'URL Google Apps Script !");
+    return;
+  }
+  const btn = document.getElementById("syncBtn");
+  const msg = document.getElementById("syncMsg");
+  btn.disabled = true; btn.textContent = "Synchronisation en cours…";
+
+  try {
+    const p = new URLSearchParams({
+      action:"add", code:currentGen.code, machineId:currentGen.machineId,
+      client:currentGen.client, days:currentGen.days, note:currentGen.note||"", key:key
+    });
+    const r = await fetch(url + "?" + p, { cache:"no-store" });
+    const d = await r.json();
+    if (d.success) {
+      currentGen.status = "active"; currentGen.synced = true;
+      db.unshift(currentGen); saveDB(); renderTable(); updateStats();
+      msg.innerHTML = '<span style="color:var(--ok)">Synchronisé ! Code actif immédiatement.</span>';
+      setTimeout(() => {
+        document.getElementById("genResult").style.display = "none";
+        document.getElementById("machineIdInput").value = "";
+        document.getElementById("clientName").value = "";
+        document.getElementById("noteInput").value = "";
+        currentGen = null;
+      }, 2500);
+    } else {
+      msg.innerHTML = '<span style="color:var(--error)">Erreur : ' + esc(d.message||"Échec") + '</span>';
+    }
+  } catch(e) {
+    currentGen.status = "pending"; currentGen.synced = false;
+    db.unshift(currentGen); saveDB(); renderTable(); updateStats();
+    msg.innerHTML = '<span style="color:var(--warn)">Hors ligne — enregistré localement. Utilisez "Sync All" plus tard.</span>';
+  }
+  btn.disabled = false; btn.textContent = "☁️ Synchroniser vers Google Sheets (activer)";
+}
+
+async function syncAll() {
+  const url = document.getElementById("gsUrl").value.trim();
+  const key = document.getElementById("adminKey").value.trim();
+  if (!url) { showToast("URL Google Apps Script manquante."); return; }
+  let n = 0;
+  for (const e of db) {
+    if (e.synced) continue;
+    try {
+      const p = new URLSearchParams({ action:"add", code:e.code, machineId:e.machineId, client:e.client, days:e.days, note:e.note||"", key:key });
+      const r = await fetch(url + "?" + p, { cache:"no-store" });
+      const d = await r.json();
+      if (d.success) { e.synced=true; e.status="active"; n++; }
+    } catch {}
+  }
+  saveDB(); renderTable(); updateStats();
+  showToast(n + " entrée(s) synchronisée(s)");
+}
+
+// ── Vérification ─────────────────────────────────────────────
+async function doVerify() {
+  const code = document.getElementById("verifyCode").value.trim().toUpperCase();
+  const el   = document.getElementById("verifyResult");
+  if (!code) { el.innerHTML=""; return; }
+  const url = document.getElementById("gsUrl").value.trim();
+  el.innerHTML = '<div style="color:#555;font-size:11px">Vérification en cours…</div>';
+  if (url) {
+    try {
+      // Pas de machineId ici : on veut le statut brut du code, indépendamment du poste.
+      const r = await fetch(url + "?action=verify&code=" + code, { cache:"no-store" });
+      const d = await r.json();
+      const col = {active:"var(--ok)",revoked:"var(--error)",expired:"var(--warn)",not_found:"var(--ink-soft)"};
+      el.innerHTML = '<div style="font-size:11px;padding:8px 10px;border-radius:4px;' +
+        'background:' + (d.valid?"var(--ok-tint)":"var(--error-tint)") + ';' +
+        'border:1px solid ' + (d.valid?"#b7d9c6":"#eab4ab") + ';' +
+        'color:' + (col[d.status]||"#333") + '">' +
+        (d.valid?"✅":"❌") + " Statut : <b>" + (d.status||"") + "</b>" +
+        (d.client ? " — Client : <b>" + esc(d.client) + "</b>" : "") +
+        "<br>" + esc(d.erreur||d.message||"") + "</div>";
+    } catch { el.innerHTML = '<div class="err">Impossible de joindre Google Sheets.</div>'; }
+  } else {
+    const local = db.find(e=>e.code===code);
+    if (local) el.innerHTML = '<div class="info">Trouvé localement — Client : <b>' + esc(local.client) + '</b> — Machine : ' + local.machineId + '</div>';
+    else el.innerHTML = '<div class="err">Code non trouvé (configurez Google Sheets pour une vérification complète).</div>';
+  }
+}
+
+async function doRevoke() {
+  const code = document.getElementById("verifyCode").value.trim().toUpperCase();
+  if (!code) { showToast("Entrez un code à révoquer."); return; }
+  openModal("Révoquer cette licence ?",
+    "Révoquer <b>" + code + "</b> ? Le poste client sera bloqué à son prochain contrôle (toutes les 60s si ouvert ; jusqu'à 7 jours de grâce s'il est hors-ligne).",
+    async () => {
+      await changeStatus(code, "revoked");
+      document.getElementById("verifyResult").innerHTML = '<div class="err">Licence révoquée. Bloquée au prochain contrôle chez le client.</div>';
+    });
+}
+
+async function doReactivate() {
+  const code = document.getElementById("verifyCode").value.trim().toUpperCase();
+  if (!code) { showToast("Entrez un code à réactiver."); return; }
+  await changeStatus(code, "active");
+  document.getElementById("verifyResult").innerHTML = '<div class="info">Licence réactivée avec succès.</div>';
+}
+
+async function changeStatus(code, status) {
+  const e = db.find(x=>x.code===code);
+  if (e) { e.status=status; saveDB(); renderTable(); updateStats(); }
+  const url = document.getElementById("gsUrl").value.trim();
+  const key = document.getElementById("adminKey").value.trim();
+  if (!url) return;
+  try {
+    const r = await fetch(url + "?action=revoke&code=" + code + "&status=" + status + "&key=" + encodeURIComponent(key), { cache:"no-store" });
+    const d = await r.json();
+    if (d.success === false) { showToast(d.message || "Refusé par le serveur."); return; }
+    showToast(status==="revoked" ? "Révoqué dans Google Sheets" : "Réactivé dans Google Sheets");
+  } catch { showToast("Hors ligne — mis à jour localement seulement."); }
+}
+
+// ── Tableau ───────────────────────────────────────────────────
+function renderTable() {
+  const wrap = document.getElementById("tableWrap");
+  const q = (document.getElementById("searchInput")?.value||"").toLowerCase();
+  let rows = db.filter(it => !q
+    || it.code.toLowerCase().includes(q)
+    || it.machineId.toLowerCase().includes(q)
+    || it.client.toLowerCase().includes(q)
+    || (it.note||"").toLowerCase().includes(q));
+  document.getElementById("jCount").textContent = rows.length;
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="empty">' + (q?"Aucun résultat":"Aucune licence enregistrée") + '</div>';
+    return;
+  }
+  const now = new Date();
+  let html = '<div class="tbl-wrap"><table><thead><tr>' +
+    '<th>#</th><th>Date</th><th>Client</th><th>Machine ID</th><th>Code</th><th>Durée</th><th>Statut</th><th>Note</th><th>Actions</th>' +
+    '</tr></thead><tbody>';
+
+  rows.forEach((it, ri) => {
+    const realI = db.indexOf(it);
+    const cr = new Date(it.createdAt);
+    const perm = it.days===0;
+    const exp  = perm ? null : new Date(cr.getTime()+it.days*86400000);
+    const isExp= !perm && now>exp;
+    const st   = it.status==="revoked" ? "revoked" : isExp ? "expired" : it.status;
+    const badges = {
+      active:  '<span class="badge2 b-act">✓ Active</span>',
+      revoked: '<span class="badge2 b-rev">⛔ Révoquée</span>',
+      expired: '<span class="badge2 b-exp">⏰ Expirée</span>',
+      pending: '<span class="badge2 b-ina">⏳ En attente</span>',
+    };
+    const dLeft = exp && !isExp ? Math.ceil((exp-now)/86400000) : null;
+    const dur = perm ? "Permanent" : it.days + "j" + (dLeft?" ("+dLeft+"j)":"");
+    html += '<tr><td style="color:#9aa5af;font-size:10px">' + (rows.length-ri) + '</td>' +
+      '<td style="white-space:nowrap;font-size:10px">' + cr.toLocaleDateString("fr-FR") + '</td>' +
+      '<td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.client) + '</td>' +
+      '<td class="mono" style="font-weight:700;color:var(--water-dark)">' + it.machineId + '</td>' +
+      '<td class="mono" style="font-size:10px">' + it.code + (!it.synced?' <span style="color:var(--warn);font-size:9px">local</span>':'') + '</td>' +
+      '<td style="font-size:11px">' + dur + '</td>' +
+      '<td>' + (badges[st]||'<span class="badge2 b-ina">'+st+'</span>') + '</td>' +
+      '<td style="font-size:10px;color:var(--ink-soft);max-width:90px;overflow:hidden;text-overflow:ellipsis">' + esc(it.note||"") + '</td>' +
+      '<td><div class="actions">' +
+        (st!=="revoked"
+          ? '<button class="btn btn-danger btn-sm" onclick="quickRevoke('+realI+')">⛔</button>'
+          : '<button class="btn btn-ok btn-sm" onclick="quickReact('+realI+')">✅</button>') +
+        '<button class="btn btn-ghost btn-sm" onclick="copyRowCode('+realI+')" title="Copier">📋</button>' +
+        '<button class="btn btn-danger btn-sm" onclick="delItem('+realI+')" title="Supprimer">🗑️</button>' +
+      '</div></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  wrap.innerHTML = html;
+}
+
+async function quickRevoke(i) { await changeStatus(db[i].code,"revoked"); renderTable(); updateStats(); showToast("Révoqué"); }
+async function quickReact(i)  { await changeStatus(db[i].code,"active");  renderTable(); updateStats(); showToast("Réactivé"); }
+function copyRowCode(i) { navigator.clipboard.writeText(db[i].code).then(()=>showToast("Code copié")); }
+function delItem(i) {
+  openModal("Supprimer ?","Supprimer cet enregistrement du journal local ? (Google Sheets n'est pas modifié)",
+    ()=>{ db.splice(i,1); saveDB(); renderTable(); updateStats(); showToast("Supprimé"); });
+}
+
+// ── Stats ─────────────────────────────────────────────────────
+function updateStats() {
+  const now=new Date(); let act=0,rev=0,exp=0;
+  db.forEach(it=>{
+    if(it.status==="revoked") rev++;
+    else {
+      const cr=new Date(it.createdAt);
+      const e2=it.days===0?null:new Date(cr.getTime()+it.days*86400000);
+      (e2&&now>e2)?exp++:act++;
+    }
+  });
+  document.getElementById("sTotal").textContent=db.length;
+  document.getElementById("sActive").textContent=act;
+  document.getElementById("sRevoked").textContent=rev;
+  document.getElementById("sExpired").textContent=exp;
+}
+
+// ── Export/Import ─────────────────────────────────────────────
+function doExport() {
+  const b=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(b);
+  a.download="gradex_licences_"+new Date().toISOString().slice(0,10)+".json"; a.click(); URL.revokeObjectURL(a.href);
+  showToast("Journal exporté");
+}
+function doImport(ev) {
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{ try { const d=JSON.parse(e.target.result); if(Array.isArray(d)){db=d;saveDB();renderTable();updateStats();showToast(d.length+" licences importées");} } catch{showToast("Fichier invalide");} };
+  r.readAsText(f); ev.target.value="";
+}
+function confirmClear() {
+  openModal("Effacer tout","Effacer tout le journal local ? (Google Sheets non affecté)",
+    ()=>{db=[];saveDB();renderTable();updateStats();showToast("Journal effacé");});
+}
+
+// ── UI ────────────────────────────────────────────────────────
+function toggleCustom() {
+  document.getElementById("customBox").style.display = document.getElementById("durSel").value==="custom"?"block":"none";
+}
+function doSearch() {
+  searchVisible=!searchVisible;
+  document.getElementById("searchBar").style.display=searchVisible?"block":"none";
+  if(searchVisible) document.getElementById("searchInput").focus();
+}
+function esc(t){const d=document.createElement("div");d.textContent=t;return d.innerHTML;}
+function showToast(m){
+  document.querySelectorAll(".toast").forEach(e=>e.remove());
+  const d=document.createElement("div");d.className="toast";d.textContent=m;
+  document.body.appendChild(d);setTimeout(()=>d.remove(),3000);
+}
+let _cb=null;
+function openModal(title,text,cb){
+  _cb=cb;
+  document.getElementById("modalTitle").textContent=title;
+  document.getElementById("modalText").innerHTML=text;
+  document.getElementById("modalOk").onclick=()=>{cb&&cb();closeModal();};
+  document.getElementById("modalConfirm").classList.add("show");
+}
+function closeModal(){ document.getElementById("modalConfirm").classList.remove("show"); _cb=null; }
+function copyScript(){
+  const key = document.getElementById("adminKey").value.trim() || "__ADMIN_KEY__";
+  const script = document.getElementById("gsCode").value.replace("__ADMIN_KEY__", key);
+  navigator.clipboard.writeText(script).then(()=>showToast("Script copié" + (key==="__ADMIN_KEY__" ? " (pensez à définir votre clé admin ci-dessus)" : " (avec votre clé admin)") + " !"));
+}
+
+// ── Init ──────────────────────────────────────────────────────
+loadConfig(); loadDB(); renderTable(); updateStats();
+</script>
+</body>
+</html>
