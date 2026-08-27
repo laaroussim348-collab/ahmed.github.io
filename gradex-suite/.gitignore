@@ -1,0 +1,7 @@
+node_modules/
+build/
+dist/
+dist-essai/
+.license-local.json
+.essai-local.json
+*.log

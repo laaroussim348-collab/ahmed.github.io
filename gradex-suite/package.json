@@ -1,0 +1,91 @@
+{
+  "name": "gradex-suite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GRADEX — Crues & bassins versants : méthode GRADEX (Guillot & Duband, 1967) et méthodes du Guide technique d'assainissement routier 2020 (ex-BV-Calc), réunies dans un seul logiciel.",
+  "homepage": "./",
+  "main": "electron-main.mjs",
+  "dependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^13.5.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-scripts": "5.0.1",
+    "recharts": "^3.8.1",
+    "web-vitals": "^2.1.4"
+  },
+  "scripts": {
+    "start": "cross-env DISABLE_ESLINT_PLUGIN=true react-scripts start",
+    "build": "cross-env DISABLE_ESLINT_PLUGIN=true react-scripts build",
+    "test": "node tests/run-tests.js",
+    "test:react": "react-scripts test",
+    "server": "node server.mjs",
+    "serve": "npm run build && node server.mjs",
+    "electron": "electron .",
+    "electron-dev": "concurrently \"cross-env BROWSER=none npm start\" \"wait-on http://localhost:3000 && electron .\"",
+    "dist": "npm run build && electron-builder --win",
+    "dist:essai": "npm run build && node scripts/build-essai.mjs"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "extends": null,
+    "appId": "com.gradexsuite.app",
+    "productName": "GRADEX",
+    "files": [
+      "electron-main.mjs",
+      "electron-main-essai.mjs",
+      "server.mjs",
+      "package.json",
+      "build/**/*",
+      "src/calculations/**/*",
+      "src/data/**/*",
+      "src/services/**/*",
+      "license-config.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build-resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GRADEX"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}
