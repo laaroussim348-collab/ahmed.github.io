@@ -21,7 +21,7 @@ import {
   METHODES, getMethode, watershed, concentrationTime, rainfall, runoff, units,
 } from '../calculations/index.js';
 import { OCCUPATIONS_SOL } from '../data/coefficientsRuissellement.js';
-import { getCN, ajusterCN } from '../calculations/curveNumber.js';
+import { getCN, ajusterCN, CN_I_COEF_OPTIONS } from '../calculations/curveNumber.js';
 import { TABLE_CN } from '../data/coefficientsCN.js';
 import { useI18n } from '../useI18n';
 import {
@@ -62,7 +62,7 @@ export const MC_ETAT_INITIAL = {
   tc_h: '', h24_mm: '', pjmax_saisie: '', weiss_k: 1.15, montana_b_suppose: 0.55,
   tcFormuleId: 'kirpich', tcPenteSource: 'globale',
   crCode: '1', crGroupe: 'moyens', crPente: '<=5%',
-  cnCategorie: '', cnCondition: '', cnGroupeSol: 'B', cnAmc: 'II',
+  cnCategorie: '', cnCondition: '', cnGroupeSol: 'B', cnAmc: 'II', cnCoefAmcI: '0.058',
   troncons: [{ longueur_m: '', altAmont: '', altAval: '' }],
   hypsoTranches: [{ altitude_bas: '', altitude_haut: '', surface_km2: '' }],
   methodesSelectionnees: [],
@@ -214,7 +214,7 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
   function lireCN() {
     try {
       const base = getCN({ categorie: v.cnCategorie, condition: v.cnCondition, groupeSol: v.cnGroupeSol });
-      const ajuste = ajusterCN(base.cn, v.cnAmc);
+      const ajuste = ajusterCN(base.cn, v.cnAmc, parseFloat(v.cnCoefAmcI) || 0.058);
       setCnResult({ base: base.cn, ajuste: ajuste.cn, formule: ajuste.formule, amc: v.cnAmc });
       patch({ CN: ajuste.cn });
     } catch (e) { setCnResult({ erreur: e.message }); }
@@ -575,6 +575,10 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
           </div>
           <Select label={t('cnAmc')} value={v.cnAmc} onChange={x=>patch({cnAmc:x})}
             options={[{value:'II',label:t('cnAmc2')},{value:'I',label:t('cnAmc1')},{value:'III',label:t('cnAmc3')}]} />
+          {v.cnAmc === 'I' && (
+            <Select label={t('cnCoefAmcI')} value={v.cnCoefAmcI} onChange={x=>patch({cnCoefAmcI:x})}
+              options={CN_I_COEF_OPTIONS.map(o=>({value:String(o.value), label:o.value===0.058?t('cnCoefAmcIStandard'):t('cnCoefAmcIExcel')}))} />
+          )}
           <button onClick={lireCN} style={{ padding:'4px 12px', background:'#fff', border:`1px solid ${C_BORDER}`, fontSize:11, cursor:'pointer' }}>{t('cnLookupBtn')}</button>
           {cnResult && (cnResult.erreur
             ? <Alert tone="error">{cnResult.erreur}</Alert>
