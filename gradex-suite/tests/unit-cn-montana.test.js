@@ -42,6 +42,12 @@ verifier('CN(I) pour CN(II)=80', ajusterCN(80, 'I').cn, (4.2 * 80) / (10 - 0.058
 verifier('CN(III) pour CN(II)=80', ajusterCN(80, 'III').cn, (23 * 80) / (10 + 0.13 * 80), 1e-9);
 verifier('CN(II) renvoie la valeur inchangée', ajusterCN(80, 'II').cn, 80);
 verifier('CN(I) < CN(II) < CN(III) (cohérence physique : sol sec ruisselle moins)', ajusterCN(80, 'I').cn < 80 && 80 < ajusterCN(80, 'III').cn, true);
+verifier('CN(I) avec coefficient 0.085 (variante classeur Excel Oued Ighi, CN(II)=66.415)', ajusterCN(66.415, 'I', 0.085).cn, (4.2 * 66.415) / (10 - 0.085 * 66.415), 1e-6);
+{
+  let leveErreurCn100 = false;
+  try { ajusterCN(80, 'I', 0.085); } catch { leveErreurCn100 = true; }
+  verifier('CN(I) avec coefficient 0.085 : erreur explicite si résultat > 100 (CN(II)=80)', leveErreurCn100, true);
+}
 
 console.log('\n=== montanaADepuisH24h (rainfall.js) ===\n');
 // Test de cohérence : si on calcule a depuis (H24h, b), puis qu'on recalcule l'intensité à t=24h avec ce a et ce b,

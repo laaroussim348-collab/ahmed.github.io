@@ -1,0 +1,302 @@
+// ============================================================
+//  DelimitationCarte.js — Carte interactive de délimitation de BV
+//  ─────────────────────────────────────────────────────────────
+//  Aperçu réduit (dans l'onglet) + bouton "agrandir" ouvrant une
+//  carte plein écran : l'utilisateur navigue, clique pour choisir
+//  l'exutoire, confirme → le contour du bassin versant et le
+//  réseau hydrographique (mghydro.com) sont dessinés par-dessus
+//  le fond de carte (façon ArcGIS), avec export en image PNG.
+//
+//  Fond de carte : imagerie satellite Esri World Imagery (par
+//  défaut, CORS activé) + option "plan" CARTO Voyager (CORS
+//  activé aussi) — les deux permettent l'export image (contrairement
+//  aux tuiles OpenStreetMap standard, qui ne renvoient pas
+//  d'en-têtes CORS et empêcheraient la lecture du canevas).
+// ============================================================
+import { useEffect, useRef, useState, useCallback } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { useI18n } from './useI18n';
+import { C_BLUE, C_TEAL, C_BORDER, C_RED, downloadChartCanvas } from './ui';
+
+const FONDS = {
+  satellite: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
+  },
+  plan: {
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    subdomains: 'abcd',
+  },
+};
+
+function iconePoint(couleur, taille = 16) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${taille}px;height:${taille}px;border-radius:50%;background:${couleur};border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.6)"></div>`,
+    iconSize: [taille, taille],
+    iconAnchor: [taille / 2, taille / 2],
+  });
+}
+
+function ajouterFond(map, id) {
+  return L.tileLayer(FONDS[id].url, {
+    attribution: FONDS[id].attribution,
+    subdomains: FONDS[id].subdomains || 'abc',
+    crossOrigin: true,
+    maxZoom: 18,
+  }).addTo(map);
+}
+
+function creerCarte(container, { interactive }) {
+  const map = L.map(container, {
+    center: [31.792, -7.083], // centre approx. du Maroc, par défaut
+    zoom: interactive ? 6 : 5,
+    zoomControl: false,
+    dragging: interactive,
+    scrollWheelZoom: interactive,
+    doubleClickZoom: interactive,
+    boxZoom: interactive,
+    keyboard: interactive,
+    touchZoom: interactive,
+    attributionControl: interactive,
+  });
+  // Contrôle de zoom en bas à gauche : le coin haut-gauche est réservé au
+  // panneau d'instructions (voir JSX), pour éviter le chevauchement.
+  if (interactive) L.control.zoom({ position: 'bottomleft' }).addTo(map);
+  ajouterFond(map, 'satellite');
+  return { map };
+}
+
+function dessinerGeometrie(map, groupeRef, { contour, coursEau, exutoire, exutoireCandidat }) {
+  if (groupeRef.current) { groupeRef.current.remove(); groupeRef.current = null; }
+  const groupe = L.layerGroup();
+  let bounds = null;
+
+  if (contour?.length > 2) {
+    const poly = L.polygon(contour, { color: '#ffb300', weight: 2.5, fillColor: '#ffb300', fillOpacity: 0.12 });
+    groupe.addLayer(poly);
+    bounds = poly.getBounds();
+  }
+  (coursEau || []).forEach((ligne) => {
+    if (ligne?.length > 1) {
+      const pl = L.polyline(ligne, { color: '#1565c0', weight: 2 });
+      groupe.addLayer(pl);
+      bounds = bounds ? bounds.extend(pl.getBounds()) : pl.getBounds();
+    }
+  });
+  if (exutoire) {
+    groupe.addLayer(L.marker(exutoire, { icon: iconePoint('#d32f2f', 14) }));
+    bounds = bounds ? bounds.extend(L.latLng(exutoire)) : L.latLngBounds([exutoire, exutoire]);
+  }
+  if (exutoireCandidat) {
+    groupe.addLayer(L.marker(exutoireCandidat, { icon: iconePoint('#ffffff', 18) }));
+  }
+  groupe.addTo(map);
+  groupeRef.current = groupe;
+  return bounds;
+}
+
+/**
+ * Composite tuiles + contour + réseau hydro + marqueur en une image PNG,
+ * sans dépendre d'une bibliothèque externe. Fonctionne uniquement si les
+ * tuiles ont été chargées en CORS (cf. FONDS ci-dessus) — sinon le
+ * canevas est "taché" et toDataURL() lève une exception, interceptée
+ * plus bas avec un message explicite.
+ */
+function exporterCarteEnImage(map, container, { contour, coursEau, exutoire }) {
+  const rect = container.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+
+  const tuiles = container.querySelectorAll('.leaflet-tile-pane img.leaflet-tile-loaded');
+  tuiles.forEach((img) => {
+    const r = img.getBoundingClientRect();
+    try { ctx.drawImage(img, r.left - rect.left, r.top - rect.top, r.width, r.height); } catch { /* tuile isolée illisible : ignorée */ }
+  });
+
+  const versPoint = (latlng) => map.latLngToContainerPoint(latlng);
+
+  if (contour?.length > 2) {
+    ctx.beginPath();
+    contour.forEach((p, i) => { const c = versPoint(p); if (i === 0) ctx.moveTo(c.x, c.y); else ctx.lineTo(c.x, c.y); });
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,179,0,0.15)'; ctx.fill();
+    ctx.strokeStyle = '#ffb300'; ctx.lineWidth = 2.5; ctx.stroke();
+  }
+  (coursEau || []).forEach((ligne) => {
+    if (!(ligne?.length > 1)) return;
+    ctx.beginPath();
+    ligne.forEach((p, i) => { const c = versPoint(p); if (i === 0) ctx.moveTo(c.x, c.y); else ctx.lineTo(c.x, c.y); });
+    ctx.strokeStyle = '#1565c0'; ctx.lineWidth = 2; ctx.stroke();
+  });
+  if (exutoire) {
+    const c = versPoint(exutoire);
+    ctx.beginPath(); ctx.arc(c.x, c.y, 6, 0, 2 * Math.PI);
+    ctx.fillStyle = '#d32f2f'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  return canvas;
+}
+
+export default function DelimitationCarte({ lat, lon, geometrie, loading, onConfirmer }) {
+  const { t } = useI18n();
+  const previewDivRef = useRef(null);
+  const previewMapObjRef = useRef(null);
+  const previewGroupeRef = useRef(null);
+
+  const fullDivRef = useRef(null);
+  const fullMapObjRef = useRef(null);
+  const fullGroupeRef = useRef(null);
+
+  const [plein, setPlein] = useState(false);
+  const [candidat, setCandidat] = useState(null); // {lat, lon} choisi par clic, en attente de confirmation
+  const [fondActif, setFondActif] = useState('satellite');
+  const [exportMsg, setExportMsg] = useState(null);
+  const [confirmErreur, setConfirmErreur] = useState(null);
+
+  const point = lat !== '' && lon !== '' && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lon))
+    ? [parseFloat(lat), parseFloat(lon)] : null;
+
+  // ── Carte miniature (aperçu, non interactive) ──
+  useEffect(() => {
+    if (!previewDivRef.current || previewMapObjRef.current) return;
+    const { map } = creerCarte(previewDivRef.current, { interactive: false });
+    previewMapObjRef.current = map;
+    return () => { map.remove(); previewMapObjRef.current = null; };
+  }, []);
+
+  useEffect(() => {
+    const map = previewMapObjRef.current;
+    if (!map) return;
+    const bounds = dessinerGeometrie(map, previewGroupeRef, {
+      contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point,
+    });
+    if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [10, 10] });
+    else if (point) map.setView(point, 11);
+  }, [geometrie, lat, lon]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Carte plein écran (montée seulement quand ouverte) ──
+  useEffect(() => {
+    if (!plein) return undefined;
+    const div = fullDivRef.current;
+    if (!div) return undefined;
+    const { map } = creerCarte(div, { interactive: true });
+    fullMapObjRef.current = map;
+    setCandidat(null);
+    setConfirmErreur(null);
+    setExportMsg(null);
+
+    const bounds = dessinerGeometrie(map, fullGroupeRef, {
+      contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point,
+    });
+    if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
+    else if (point) map.setView(point, 12);
+
+    map.on('click', (e) => setCandidat({ lat: e.latlng.lat, lon: e.latlng.lng }));
+
+    setTimeout(() => map.invalidateSize(), 50);
+    return () => { map.remove(); fullMapObjRef.current = null; fullGroupeRef.current = null; };
+  }, [plein]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Redessine le marqueur candidat sans reconstruire toute la carte
+  useEffect(() => {
+    const map = fullMapObjRef.current;
+    if (!map || !plein) return;
+    dessinerGeometrie(map, fullGroupeRef, {
+      contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point, exutoireCandidat: candidat ? [candidat.lat, candidat.lon] : null,
+    });
+  }, [candidat]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function basculerFond() {
+    const map = fullMapObjRef.current;
+    if (!map) return;
+    const suivant = fondActif === 'satellite' ? 'plan' : 'satellite';
+    map.eachLayer((l) => { if (l instanceof L.TileLayer) map.removeLayer(l); });
+    ajouterFond(map, suivant);
+    setFondActif(suivant);
+  }
+
+  const confirmer = useCallback(async () => {
+    if (!candidat || !onConfirmer) return;
+    setConfirmErreur(null);
+    try {
+      await onConfirmer(candidat.lat, candidat.lon);
+      setCandidat(null);
+    } catch (e) {
+      setConfirmErreur(e.message || String(e));
+    }
+  }, [candidat, onConfirmer]);
+
+  function telechargerImage() {
+    const map = fullMapObjRef.current;
+    const div = fullDivRef.current;
+    if (!map || !div) return;
+    try {
+      const canvas = exporterCarteEnImage(map, div, { contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point });
+      downloadChartCanvas(canvas, 'delimitation-bassin-versant.png', (msg) => setExportMsg(msg));
+    } catch (e) {
+      setExportMsg(t('carteExportErreur'));
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ position: 'relative', height: 150, border: `1px solid ${C_BORDER}`, marginTop: 6, marginBottom: 4, background: '#eee' }}>
+        <div ref={previewDivRef} style={{ width: '100%', height: '100%' }} />
+        <button onClick={() => setPlein(true)}
+          title={t('carteAgrandir')}
+          style={{ position: 'absolute', top: 6, right: 6, zIndex: 500, background: '#fff', border: `1px solid ${C_BORDER}`,
+            borderRadius: 3, padding: '4px 9px', fontSize: 16, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,.3)' }}>
+          🔍
+        </button>
+      </div>
+      <p style={{ fontSize: 10, color: '#888', margin: '0 0 6px' }}>{t('carteApercuHint')}</p>
+
+      {plein && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: '#000' }}>
+          <div ref={fullDivRef} style={{ width: '100%', height: '100%' }} />
+
+          <div style={{ position: 'absolute', top: 10, left: 10, right: 10, zIndex: 500, display: 'flex',
+            justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', pointerEvents: 'none' }}>
+            <div style={{ background: 'rgba(255,255,255,.95)', border: `1px solid ${C_BORDER}`, borderRadius: 3,
+              padding: '8px 12px', fontSize: 12, maxWidth: 420, pointerEvents: 'auto', lineHeight: 1.6 }}>
+              <b style={{ color: C_BLUE }}>{t('carteTitrePlein')}</b>
+              <div style={{ color: '#555', marginTop: 3 }}>{t('carteInstructions')}</div>
+              {candidat && <div style={{ marginTop: 4 }}>{t('carteExutoireChoisi')} <b>{candidat.lat.toFixed(5)}, {candidat.lon.toFixed(5)}</b></div>}
+              {confirmErreur && <div style={{ marginTop: 4, color: C_RED }}>⚠️ {confirmErreur}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 6, pointerEvents: 'auto' }}>
+              <button onClick={basculerFond} style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>
+                {fondActif === 'satellite' ? t('cartePlanBtn') : t('carteSatelliteBtn')}
+              </button>
+              <button onClick={() => setPlein(false)} style={{ padding: '6px 12px', fontSize: 14, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>✕</button>
+            </div>
+          </div>
+
+          <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 500,
+            display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button onClick={confirmer} disabled={!candidat || loading}
+              style={{ padding: '8px 20px', fontSize: 13, fontWeight: 700, color: '#fff',
+                background: (!candidat || loading) ? '#999' : C_TEAL, border: 'none', borderRadius: 3,
+                cursor: (!candidat || loading) ? 'not-allowed' : 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.4)' }}>
+              {loading ? t('gxChargement') : t('carteConfirmerBtn')}
+            </button>
+            {geometrie?.contour?.length > 0 && (
+              <button onClick={telechargerImage}
+                style={{ padding: '8px 16px', fontSize: 13, color: C_BLUE, background: '#fff', border: `1px solid ${C_BLUE}`,
+                  borderRadius: 3, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.4)' }}>
+                {t('carteTelechargerBtn')}
+              </button>
+            )}
+            {exportMsg && <span style={{ background: 'rgba(255,255,255,.95)', padding: '4px 10px', fontSize: 11, borderRadius: 3 }}>{exportMsg}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

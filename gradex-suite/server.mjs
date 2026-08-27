@@ -103,7 +103,10 @@ async function apiActiver(req, res) {
     }
   });
 }
-// -> { surface_km2, perimetre_km, longueur_km, altitude_min_m, altitude_max_m, troncons, avertissements }
+// -> { surface_km2, perimetre_km, longueur_km, altitude_min_m, altitude_max_m,
+//      troncons, contour_latlon, coursEau_latlon, avertissements }
+// contour_latlon / coursEau_latlon : géométrie (contour du BV + réseau
+// hydrographique amont), en [lat,lon], pour affichage sur la carte du client.
 // ---------------------------------------------------------------------
 async function apiDelineation(lat, lon, res) {
   try {

@@ -62,6 +62,8 @@ export function analyserDelimitation(watershed, rivers, exutoireLatLon) {
     perimetre_km,
     longueur_km,
     cheminPrincipal,
+    ring: watershed.ring, // contour du bassin, [lon,lat][] (GeoJSON) — pour affichage carte
+    rivers, // réseau hydrographique complet, [{coordinates:[lon,lat][], sorder}] — pour affichage carte
     pointsAltitudeAQuerir: pointsAQuerir, // [lat,lon][], à passer à l'API d'altimétrie, DANS CET ORDRE
     avertissements,
   };
@@ -125,6 +127,10 @@ export function finaliserCaracteristiques(analyse, altitudes_m_brutes) {
     altitude_min_m,
     altitude_max_m,
     troncons,
+    // Géométrie pour affichage carte (Leaflet attend [lat,lon], le GeoJSON de
+    // mghydro.com est en [lon,lat] — conversion faite ici, une seule fois).
+    contour_latlon: (analyse.ring || []).map(([lon, lat]) => [lat, lon]),
+    coursEau_latlon: (analyse.rivers || []).map((r) => r.coordinates.map(([lon, lat]) => [lat, lon])),
     avertissements,
   };
 }
