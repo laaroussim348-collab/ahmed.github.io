@@ -25,6 +25,45 @@ export const BV_EXCEL = {
   },
 };
 
+// Second bassin de référence : classeur CALCULE_DEBIT_OUED_IGHI.xlsx (fourni
+// le 27/08/2026), utilisé pour vérifier les fonctions ajoutées après coup
+// (indice de compacité / rectangle équivalent / altitude moyenne pondérée
+// par courbe hypsométrique) et pour re-vérifier TR-55 sur un 2e cas complet.
+export const BV_IGHI_EXCEL = {
+  surface_km2: 202.519508, // 'CAR DE BV'!F6
+  perimetre_km: 70.938858, // 'CAR DE BV'!G6
+  longueur_thalweg_km: 23.619052, // 'CAR DE BV'!H6
+  compacite: {
+    Ic_attendu: 1.3957537144154113, // 'CAR DE BV'!H36
+    forme_attendue: 'allongée', // 'CAR DE BV'!I36
+    Kh_attendu: 17.14882612562096, // 'CAR DE BV'!J36
+    L_equiv_km_attendu: 28.31774763783483, // 'CAR DE BV'!F38
+    l_equiv_km_attendu: 7.151681362165166, // 'CAR DE BV'!G38
+  },
+  hypsometrie: {
+    // 'CAR DE BV'!F42:I57 — tranches [altitude_bas ; altitude_haut] et surface (km²)
+    tranches: [
+      { altitude_bas: 1191, altitude_haut: 1500, surface_km2: 18.5474905193 },
+      { altitude_bas: 1500, altitude_haut: 2000, surface_km2: 76.3644105924 },
+      { altitude_bas: 2000, altitude_haut: 2500, surface_km2: 70.674358379 },
+      { altitude_bas: 2500, altitude_haut: 3000, surface_km2: 31.0157649482 },
+      { altitude_bas: 3000, altitude_haut: 3248, surface_km2: 5.91392919582 },
+    ],
+    // Écart de 0.04m (0.002%) avec 'CAR DE BV'!G57 (2080.684...) dû à la
+    // convention de bornage des tranches extrêmes du classeur (décalage
+    // d'une ligne entre F52:G56) ; formule mathématiquement équivalente,
+    // tolérance élargie ci-dessous.
+    altitudeMoyenne_m_attendue: 2080.684206473876,
+  },
+  tr55: {
+    // 'TR55' — CN(I) déjà calculé par le classeur (coefficient 0.085, non
+    // repris ici — voir README) ; on part directement de ce CN(I) transcrit
+    // pour vérifier uniquement le moteur TR-55 (S, Ia, Pe, C0/C1/C2, k, qu, Qp).
+    entrees: { surface_km2: 202.519508, CN: 64.04617051813248, p24_mm: 114, tc_h: 1.9382344242605813 },
+    attendu: { q_m3s: 560.8160679541742 }, // 'TR55'!E5
+  },
+};
+
 export const CAS_REFERENCE = [
   {
     categorie: 'tc',

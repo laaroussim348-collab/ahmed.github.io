@@ -27,6 +27,7 @@ import { useI18n } from '../useI18n';
 import {
   Panel, Field, Select, CollapseSection, Alert, TH, TD, C_BORDER, C_TEAL, C_BLUE, C_RED, C_STRIP,
 } from '../ui';
+import DelimitationCarte from '../DelimitationCarte.js';
 
 function fmt(v, d = 3) {
   if (v === undefined || v === null || Number.isNaN(v)) return '—';
@@ -63,6 +64,7 @@ export const MC_ETAT_INITIAL = {
   crCode: '1', crGroupe: 'moyens', crPente: '<=5%',
   cnCategorie: '', cnCondition: '', cnGroupeSol: 'B', cnAmc: 'II',
   troncons: [{ longueur_m: '', altAmont: '', altAval: '' }],
+  hypsoTranches: [{ altitude_bas: '', altitude_haut: '', surface_km2: '' }],
   methodesSelectionnees: [],
   geoLat: '', geoLon: '',
 };
@@ -72,8 +74,10 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
   const patch = useCallback(p => setV(prev => ({ ...prev, ...p })), [setV]);
 
   const [showGeo, setShowGeo] = useState(false);
+  const [showHypso, setShowHypso] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoMsg, setGeoMsg] = useState(null); // { html, tone }
+  const [geoGeometrie, setGeoGeometrie] = useState(null); // { contour, coursEau } — pour la carte
   const [tcResult, setTcResult] = useState(null);
   const [crResult, setCrResult] = useState(null);
   const [cnResult, setCnResult] = useState(null);
@@ -106,6 +110,31 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
   }
   function ajouterTroncon() { patch({ troncons: [...v.troncons, { longueur_m: '', altAmont: '', altAval: '' }] }); }
   function supprimerTroncon(i) { patch({ troncons: v.troncons.filter((_, idx) => idx !== i) }); }
+
+  // ── Indice de compacité / forme / rectangle équivalent (auto, aucune saisie) ──
+  const compacite = useMemo(() => {
+    const A = parseFloat(v.surface_km2), P = parseFloat(v.perimetre_km), L = parseFloat(v.longueur_km);
+    if (!estRempli(v.surface_km2) || !estRempli(v.perimetre_km)) return null;
+    try { return watershed.indiceCompacite(A, P, L || undefined); }
+    catch (e) { return { erreur: e.message }; }
+  }, [v.surface_km2, v.perimetre_km, v.longueur_km]);
+
+  // ── Courbe hypsométrique → altitude moyenne pondérée ──────
+  const [hypsoResult, setHypsoResult] = useState(null);
+  function setHypso(i, cle, val) {
+    const t2 = v.hypsoTranches.slice();
+    t2[i] = { ...t2[i], [cle]: val };
+    patch({ hypsoTranches: t2 });
+  }
+  function ajouterHypso() { patch({ hypsoTranches: [...v.hypsoTranches, { altitude_bas: '', altitude_haut: '', surface_km2: '' }] }); }
+  function supprimerHypso(i) { patch({ hypsoTranches: v.hypsoTranches.filter((_, idx) => idx !== i) }); }
+  function calculerAltitudeMoyenne() {
+    try {
+      const r = watershed.altitudeMoyennePonderee(v.hypsoTranches);
+      setHypsoResult(r);
+      patch({ altitudeMoyenne_m: Math.round(r.altitudeMoyenne_m * 100) / 100 });
+    } catch (e) { setHypsoResult({ erreur: e.message }); }
+  }
 
   // ── Temps de concentration (7 formules BV-Calc) ───────────
   function calculerTC() {
@@ -192,13 +221,16 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
   }
 
   // ── Localisation & calcul automatique (mghydro.com + NASA POWER) ──
-  async function calculerGeo() {
-    const lat = parseFloat(v.geoLat), lon = parseFloat(v.geoLon);
-    if (Number.isNaN(lat) || Number.isNaN(lon)) { setGeoMsg({ tone:'error', html:t('geoErreurCoords') }); return; }
+  // lat/lon explicites (ex. clic sur la carte) prioritaires sur v.geoLat/v.geoLon.
+  async function calculerGeo(latArg, lonArg) {
+    const lat = latArg ?? parseFloat(v.geoLat);
+    const lon = lonArg ?? parseFloat(v.geoLon);
+    if (Number.isNaN(lat) || Number.isNaN(lon)) { setGeoMsg({ tone:'error', html:t('geoErreurCoords') }); throw new Error(t('geoErreurCoords')); }
+    patch({ geoLat: String(lat), geoLon: String(lon) });
     setGeoLoading(true);
     setGeoMsg({ tone:'info', html:t('geoEnCours') });
     const avertissements = [];
-    let ok = false, html = '';
+    let ok = false, okDelineation = false, html = '';
     try {
       const rep = await fetch(`/api/delineation?lat=${lat}&lon=${lon}`);
       const data = await rep.json();
@@ -212,10 +244,13 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
         patchGeo.troncons = data.troncons.map(tr => ({ longueur_m: Math.round(tr.longueur_m * 10) / 10, altAmont: tr.altitude_amont_m, altAval: tr.altitude_aval_m }));
       }
       patch(patchGeo);
+      if (data.contour_latlon?.length) {
+        setGeoGeometrie({ contour: data.contour_latlon, coursEau: data.coursEau_latlon || [] });
+      }
       html += `✅ ${t('fixSurfacePerimetre')} ${fmt(data.surface_km2, 2)} ${t('fixPerimetreApprox')} ${fmt(data.perimetre_km, 2)} ${t('fixKm')}` +
         (data.longueur_km ? `${t('fixThalwegApprox')} ${fmt(data.longueur_km, 2)} ${t('fixKm')}` : '') + '.';
       avertissements.push(...(data.avertissements || []));
-      ok = true;
+      ok = true; okDelineation = true;
     } catch (e) { html += `❌ ${t('erreur')} ${e.message}`; }
 
     try {
@@ -246,6 +281,7 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
     if (avertissements.length) html += '<br>' + avertissements.map(a => `⚠️ ${a}`).join('<br>');
     setGeoMsg({ tone: ok ? 'ok' : 'error', html });
     setGeoLoading(false);
+    if (!okDelineation) throw new Error(t('fixEchecDelimitation'));
   }
 
   function importerVersGradex() {
@@ -309,7 +345,7 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, alignItems:'end' }}>
           <Field label={t('geoLat')} value={v.geoLat} onChange={x => patch({ geoLat:x })} type="number" placeholder="33.9716" />
           <Field label={t('geoLon')} value={v.geoLon} onChange={x => patch({ geoLon:x })} type="number" placeholder="-6.8498" />
-          <button onClick={calculerGeo} disabled={geoLoading}
+          <button onClick={() => calculerGeo().catch(() => {})} disabled={geoLoading}
             style={{ height:24, padding:'0 12px', background:geoLoading?'#aaa':C_BLUE, color:'#fff', border:'none',
               fontSize:11, cursor:geoLoading?'not-allowed':'pointer', marginBottom:6 }}>
             {geoLoading ? t('gxChargement') : t('geoCalcBtn')}
@@ -323,6 +359,8 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
             cursor: (!v.surface_km2 && !v.tc_h) ? 'not-allowed' : 'pointer', opacity: (!v.surface_km2 && !v.tc_h) ? 0.5 : 1 }}>
           {t('mcGeoImporterVersGradex')}
         </button>
+
+        <DelimitationCarte lat={v.geoLat} lon={v.geoLon} geometrie={geoGeometrie} loading={geoLoading} onConfirmer={calculerGeo} />
       </CollapseSection>
 
       {/* ── Bassin versant ── */}
@@ -370,6 +408,56 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
                 ? <span>{t('bvPenteGlobale')} : <b>{fmt(penteGlobale.pente_m_par_m,6)} m/m</b> ({fmt(penteGlobale.pente_pourcent,4)} %) — {t('fixPenteGlobaleUtilisee')}</span>
                 : <span style={surfWarnStyle}>{t('fixPenteRenseignerGlobale')}</span>}
           </div>
+        </div>
+
+        {/* ── Indice de compacité / forme / rectangle équivalent — auto ── */}
+        <div style={{ marginTop:10, borderTop:`1px solid ${C_BORDER}`, paddingTop:8 }}>
+          <b style={{ fontSize:12, color:C_BLUE }}>{t('bvCompaciteTitre')}</b>
+          <p style={{ fontSize:10.5, color:'#888', margin:'4px 0 6px' }}>{t('bvCompaciteHint')}</p>
+          {compacite?.erreur
+            ? <span style={surfWarnStyle}>{compacite.erreur}</span>
+            : compacite
+              ? (
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:8, fontSize:11 }}>
+                  <div>{t('bvIc')} : <b>{fmt(compacite.Ic,4)}</b></div>
+                  <div>{t('bvForme')} : <b>{compacite.forme === 'allongée' ? t('bvFormeAllongee') : t('bvFormeCompacte')}</b></div>
+                  {compacite.Kh != null && <div>{t('bvKh')} : <b>{fmt(compacite.Kh,4)}</b></div>}
+                  {compacite.L_equiv_km != null
+                    ? <>
+                        <div>{t('bvRectL')} : <b>{fmt(compacite.L_equiv_km,3)} km</b></div>
+                        <div>{t('bvRectl')} : <b>{fmt(compacite.l_equiv_km,3)} km</b></div>
+                      </>
+                    : <div style={surfWarnStyle}>{t('bvRectImpossible')}</div>}
+                </div>
+              )
+              : <span style={surfWarnStyle}>{t('bvCompaciteManque')}</span>}
+        </div>
+
+        {/* ── Courbe hypsométrique → altitude moyenne pondérée ── */}
+        <div style={{ marginTop:10, borderTop:`1px solid ${C_BORDER}`, paddingTop:8 }}>
+          <CollapseSection title={t('bvHypsoTitre')} icon="chart-area-line" open={showHypso} onToggle={()=>setShowHypso(s=>!s)} accent={C_BLUE}>
+            <p style={{ fontSize:10.5, color:'#888', marginBottom:6 }}>{t('bvHypsoHint')}</p>
+            <table style={{ width:'100%', borderCollapse:'collapse', marginBottom:6 }}>
+              <thead><tr>{[t('bvHypsoAltBas'),t('bvHypsoAltHaut'),t('bvHypsoSurface'),''].map(h=><th key={h} style={{...TH,padding:'3px 6px'}}>{h}</th>)}</tr></thead>
+              <tbody>
+                {v.hypsoTranches.map((tr,i) => (
+                  <tr key={i}>
+                    <td style={{...TD}}><input type="number" value={tr.altitude_bas} onChange={e=>setHypso(i,'altitude_bas',e.target.value)} style={{width:80,height:20,fontSize:11,border:`1px solid ${C_BORDER}`}} /></td>
+                    <td style={{...TD}}><input type="number" value={tr.altitude_haut} onChange={e=>setHypso(i,'altitude_haut',e.target.value)} style={{width:80,height:20,fontSize:11,border:`1px solid ${C_BORDER}`}} /></td>
+                    <td style={{...TD}}><input type="number" value={tr.surface_km2} onChange={e=>setHypso(i,'surface_km2',e.target.value)} style={{width:80,height:20,fontSize:11,border:`1px solid ${C_BORDER}`}} /></td>
+                    <td style={{...TD}}>{v.hypsoTranches.length>1 && <button onClick={()=>supprimerHypso(i)} style={{border:'none',background:'none',cursor:'pointer',color:C_RED}}>✕</button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={ajouterHypso} style={{ padding:'3px 10px', fontSize:11, background:'#fff', border:`1px solid ${C_BORDER}`, cursor:'pointer' }}>{t('bvHypsoAjouterTranche')}</button>
+              <button onClick={calculerAltitudeMoyenne} style={{ padding:'3px 10px', fontSize:11, background:C_TEAL, color:'#fff', border:'none', cursor:'pointer' }}>{t('bvHypsoCalculer')}</button>
+            </div>
+            {hypsoResult && (hypsoResult.erreur
+              ? <Alert tone="error">{hypsoResult.erreur}</Alert>
+              : <div style={{ fontSize:11, marginTop:6 }}>{t('bvHypsoResultat')} <b>{fmt(hypsoResult.altitudeMoyenne_m,2)} m</b> ({t('bvHypsoSurfaceTotale')} {fmt(hypsoResult.surfaceTotale_km2,2)} km²) — {t('bvHypsoAppliqueA')} <i>{t('bvAltmoy')}</i>.</div>)}
+          </CollapseSection>
         </div>
       </Panel>
 

@@ -78,6 +78,95 @@ export function penteMoyennePonderee(altitudes_m, longueurs_m) {
 }
 
 /**
+ * Indice de compacité de Gravelius (Ic), forme du bassin, coefficient Kh et
+ * rectangle équivalent (L, l) — calculés automatiquement à partir de la
+ * surface, du périmètre et de la longueur du thalweg principal déjà saisis
+ * (aucune donnée supplémentaire à renseigner).
+ *
+ * Ic = 0.28 × P/√A                          forme : Ic > 1.12 → allongée, sinon compacte
+ * Kh = 2 × A / L                            (A : km², L : longueur du thalweg principal, km)
+ * L, l (rectangle équivalent, Gravelius) :
+ *   L = (Ic×√A/1.12) × [1 + √(1 − (1.12/Ic)²)]
+ *   l = (Ic×√A/1.12) × [1 − √(1 − (1.12/Ic)²)]
+ *
+ * @param {number} surface_km2
+ * @param {number} perimetre_km
+ * @param {number} [longueur_km]  longueur du thalweg principal (facultatif, pour Kh)
+ * Source : Excel 'CAR DE BV'!H36:J38 (formule de Gravelius, standard en hydrologie).
+ */
+export function indiceCompacite(surface_km2, perimetre_km, longueur_km) {
+  if (!(surface_km2 > 0)) throw new Error('La surface doit être strictement positive.');
+  if (!(perimetre_km > 0)) throw new Error('Le périmètre doit être strictement positif.');
+
+  const racineA = Math.sqrt(surface_km2);
+  const Ic = 0.28 * (perimetre_km / racineA);
+  const forme = Ic > 1.12 ? 'allongée' : 'compacte';
+
+  let L_equiv_km = null;
+  let l_equiv_km = null;
+  const sousRacine = 1 - (1.12 / Ic) ** 2;
+  if (sousRacine >= 0) {
+    const base = (Ic * racineA) / 1.12;
+    L_equiv_km = base * (1 + Math.sqrt(sousRacine));
+    l_equiv_km = base * (1 - Math.sqrt(sousRacine));
+  }
+
+  const Kh = longueur_km > 0 ? (2 * surface_km2) / longueur_km : null;
+
+  return {
+    Ic, forme, Kh, L_equiv_km, l_equiv_km,
+    formule: 'Ic = 0.28×P/√A ; L,l = (Ic×√A/1.12)×[1±√(1−(1.12/Ic)²)] ; Kh = 2A/L',
+    source: "Excel 'CAR DE BV'!H36:J38",
+  };
+}
+
+/**
+ * Altitude moyenne pondérée par la surface (courbe hypsométrique simplifiée) :
+ * pour chaque tranche d'altitude [altitude_bas ; altitude_haut] occupant une
+ * surface Si, on prend l'altitude moyenne de la tranche (milieu), pondérée
+ * par Si. Remplace une saisie manuelle unique de l'altitude moyenne par un
+ * calcul à partir des surfaces par tranche (ex. sorties ArcGIS / QGIS
+ * "zonal statistics").
+ *
+ * altitude_moyenne = Σ[Si × (altitude_bas_i + altitude_haut_i)/2] / ΣSi
+ *
+ * @param {{altitude_bas:number, altitude_haut:number, surface_km2:number}[]} tranches
+ * Source : Excel 'CAR DE BV'!F41:I57 ("COURBE HYPSOMETRIQUE").
+ */
+export function altitudeMoyennePonderee(tranches) {
+  const valides = (tranches || []).filter((t) =>
+    t.altitude_bas !== '' && t.altitude_haut !== '' && t.surface_km2 !== '' &&
+    t.altitude_bas != null && t.altitude_haut != null && t.surface_km2 != null &&
+    !Number.isNaN(Number(t.altitude_bas)) && !Number.isNaN(Number(t.altitude_haut)) && !Number.isNaN(Number(t.surface_km2))
+  );
+  if (!valides.length) throw new Error('Aucune tranche altitudinale valide (altitude bas, altitude haut, surface).');
+
+  let sommeSurfaces = 0;
+  let sommePondere = 0;
+  const detail = valides.map((t) => {
+    const bas = Number(t.altitude_bas);
+    const haut = Number(t.altitude_haut);
+    const s = Number(t.surface_km2);
+    if (haut <= bas) throw new Error(`Tranche invalide : altitude haute (${haut}) ≤ altitude basse (${bas}).`);
+    if (!(s > 0)) throw new Error('Chaque surface de tranche doit être strictement positive.');
+    const milieu = (bas + haut) / 2;
+    const pondere = s * milieu;
+    sommeSurfaces += s;
+    sommePondere += pondere;
+    return { altitude_bas: bas, altitude_haut: haut, surface_km2: s, altitude_milieu: milieu, pondere };
+  });
+
+  const altitudeMoyenne_m = sommePondere / sommeSurfaces;
+  return {
+    altitudeMoyenne_m,
+    surfaceTotale_km2: sommeSurfaces,
+    detail,
+    formule: 'Zmoy = Σ[Si×(Zbas_i+Zhaut_i)/2] / ΣSi',
+    source: "Excel 'CAR DE BV'!F41:I57 (courbe hypsométrique)",
+  };
+}
+
+/**
  * Pente globale simple : dénivelée totale / longueur du thalweg principal.
  * C'est cette pente (et non la pente pondérée par tronçons) qui est utilisée
  * par la formule de Kirpich, Espagnole, Californienne et Turrazza dans le

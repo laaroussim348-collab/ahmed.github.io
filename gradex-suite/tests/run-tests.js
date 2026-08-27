@@ -10,7 +10,7 @@
  * -----------------------------------------------------------------------
  */
 import { getMethode, watershed, concentrationTime, rainfall } from '../src/calculations/index.js';
-import { CAS_REFERENCE, BV_EXCEL } from './reference-cases.js';
+import { CAS_REFERENCE, BV_EXCEL, BV_IGHI_EXCEL } from './reference-cases.js';
 
 const TOLERANCE_DEFAUT_POURCENT = 0.5; // écart acceptable dû aux arrondis (cahier des charges §7)
 
@@ -74,6 +74,44 @@ for (const cas of CAS_REFERENCE.filter((c) => c.categorie === 'rainfall_h24_mont
   comparer('H24h (extrapolation Montana)', cas.attendu.h24_mm, r.h24_mm, cas.cellule, cas.tolerancePourcent);
 }
 
+// --- 3bis. Bassin Oued Ighi (2e classeur de référence) — compacité, rectangle
+//     équivalent, altitude moyenne pondérée (courbe hypsométrique), TR-55 ---
+try {
+  const c = BV_IGHI_EXCEL.compacite;
+  const r = watershed.indiceCompacite(BV_IGHI_EXCEL.surface_km2, BV_IGHI_EXCEL.perimetre_km, BV_IGHI_EXCEL.longueur_thalweg_km);
+  comparer('Indice de compacité Ic (Oued Ighi)', c.Ic_attendu, r.Ic, "'CAR DE BV'!H36");
+  comparer('Kh (Oued Ighi)', c.Kh_attendu, r.Kh, "'CAR DE BV'!J36");
+  comparer('Rectangle équivalent — L (Oued Ighi)', c.L_equiv_km_attendu, r.L_equiv_km, "'CAR DE BV'!F38");
+  comparer('Rectangle équivalent — l (Oued Ighi)', c.l_equiv_km_attendu, r.l_equiv_km, "'CAR DE BV'!G38");
+  total++;
+  const formeOk = r.forme === c.forme_attendue;
+  if (formeOk) reussis++;
+  lignes.push({ test: 'Forme du bassin (Oued Ighi)', excel: c.forme_attendue, nodejs: r.forme, ecart: 0, ecartPourcent: 0, cellule: "'CAR DE BV'!I36", statut: formeOk ? 'PASS' : 'FAIL' });
+} catch (e) {
+  total++;
+  lignes.push({ test: 'Compacité / rectangle équivalent (Oued Ighi)', statut: 'FAIL', erreur: e.message });
+}
+
+try {
+  const h = BV_IGHI_EXCEL.hypsometrie;
+  const r = watershed.altitudeMoyennePonderee(h.tranches);
+  // Tolérance élargie (0.01%) : cf. commentaire dans reference-cases.js sur le
+  // bornage des tranches extrêmes, décalage négligeable (~0.04 m sur 2080 m).
+  comparer('Altitude moyenne pondérée — courbe hypsométrique (Oued Ighi)', h.altitudeMoyenne_m_attendue, r.altitudeMoyenne_m, "'CAR DE BV'!G57", 0.01);
+} catch (e) {
+  total++;
+  lignes.push({ test: 'Altitude moyenne pondérée (Oued Ighi)', statut: 'FAIL', erreur: e.message });
+}
+
+try {
+  const { calculer } = getMethode('tr55');
+  const r = calculer(BV_IGHI_EXCEL.tr55.entrees);
+  comparer('Qp — tr55 (Oued Ighi, CN déjà ajusté AMC)', BV_IGHI_EXCEL.tr55.attendu.q_m3s, r.q_m3s, "'TR55'!E5");
+} catch (e) {
+  total++;
+  lignes.push({ test: 'Qp — tr55 (Oued Ighi)', statut: 'FAIL', erreur: e.message });
+}
+
 // --- 4. Méthodes de calcul du débit de pointe ---
 for (const cas of CAS_REFERENCE.filter((c) => c.categorie === 'methode')) {
   try {
@@ -98,11 +136,12 @@ for (const l of lignes) {
     console.log(l.test.padEnd(largeurTest) + `  ERREUR : ${l.erreur}`);
     continue;
   }
+  const fmtCol = (v) => (typeof v === 'number' ? v.toFixed(4) : String(v));
   console.log(
     l.test.padEnd(largeurTest) +
-      String(l.excel.toFixed(4)).padEnd(18) +
-      String(l.nodejs.toFixed(4)).padEnd(18) +
-      String(l.ecart.toFixed(4)).padEnd(14) +
+      String(fmtCol(l.excel)).padEnd(18) +
+      String(fmtCol(l.nodejs)).padEnd(18) +
+      String(fmtCol(l.ecart)).padEnd(14) +
       String(l.ecartPourcent.toFixed(3) + ' %').padEnd(12) +
       l.statut +
       `   (${l.cellule})`
