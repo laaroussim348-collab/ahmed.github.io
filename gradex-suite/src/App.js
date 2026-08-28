@@ -629,6 +629,8 @@ function MainApp() {
   const [tcSel,     setTcSel]     = useState(null);
   const [showTC,    setShowTC]    = useState(false);
 
+  const [showGumbelTable, setShowGumbelTable] = useState(false);
+
   const [showNasa,  setShowNasa]  = useState(false);
   const [nasaLat,   setNasaLat]   = useState("");
   const [nasaLon,   setNasaLon]   = useState("");
@@ -770,10 +772,9 @@ function MainApp() {
 
   const TABS = [
     { id:"donnees",    icon:"database",   label:t('tabDonnees')    },
-    { id:"tableau",    icon:"table",      label:t('tabTableau')    },
-    { id:"gradex",     icon:"wave-sine",  label:t('tabGradex')     },
-    { id:"graphiques", icon:"chart-line", label:t('tabGraphiques') },
     { id:"methodes",   icon:"stack-2",    label:t('tabMethodes')   },
+    { id:"resultats",  icon:"list-check", label:t('tabResultats')  },
+    { id:"graphiques", icon:"chart-line", label:t('tabGraphiques') },
     { id:"rapport",    icon:"file-text",  label:t('tabRapport')    },
   ];
 
@@ -1143,8 +1144,8 @@ function MainApp() {
           </div>
         )}
 
-        {/* ═══ ONGLET TABLEAU GUMBEL ════════════════════════════════ */}
-        {tab === "tableau" && (
+        {/* ═══ ONGLET RÉSULTATS (Gradex + Méthodes complémentaires) ═══ */}
+        {tab === "resultats" && (
           !res ? <NoData title={t('gxDonneesInsuffisantes')} hint={t('gxDonneesInsuffisantesHint')} /> : (
             <>
               {surfWarn && <SurfWarn t={t} />}
@@ -1161,41 +1162,9 @@ function MainApp() {
                 ))}
               </div>
               {res.useMontana && <MontBanner res={res} tc={tc} bMontana={bMontana} t={t} />}
-              <Panel title={`${t('gxTableauAjustement')} ${station} (n=${res.n})`} icon="table" noPad>
-                <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                  <thead>
-                    <tr>
-                      {[t('gxRang'),t('gxAnnee'),t('gxPjmax24h'),t('gxFreqHazen'),
-                        t('gxVarReduite'),t('gxPjmaxEstimee')].map(h =>
-                        <th key={h} style={TH}>{h}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {res.rowsFull.map((r,i) => (
-                      <tr key={i} style={{ background:i%2===0?"#fff":C_STRIP }}>
-                        <td style={TD}>{r.rank}</td>
-                        <td style={{ ...TD, textAlign:"left", paddingLeft:10 }}>{r.year}</td>
-                        <td style={{ ...TD, fontWeight:600, color:C_BLUE }}>{r.pj.toFixed(1)}</td>
-                        <td style={TD}>{r.F.toFixed(6)}</td>
-                        <td style={TD}>{r.u.toFixed(6)}</td>
-                        <td style={{ ...TD, color:C_TEAL }}>{r.pEst.toFixed(3)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Panel>
-            </>
-          )
-        )}
 
-        {/* ═══ ONGLET GRADEX ════════════════════════════════════════ */}
-        {tab === "gradex" && (
-          !res ? <NoData title={t('gxDonneesInsuffisantes')} hint={t('gxDonneesInsuffisantesHint')} /> : (
-            <>
-              {surfWarn && <SurfWarn t={t} />}
-              {res.useMontana && <MontBanner res={res} tc={tc} bMontana={bMontana} t={t} />}
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
-                <Panel title={t('gxParamGradex')} icon="math-symbols">
+              <Panel title={t('resGradexTitre')} icon="wave-sine" accent={C_TEAL}>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
                     <tbody>
                       {[["GRADEX a = σ√6/π",f6(res.a)+" mm"],[t('gxParamB'),f6(res.b)+" mm"],
@@ -1212,8 +1181,6 @@ function MainApp() {
                       ))}
                     </tbody>
                   </table>
-                </Panel>
-                <Panel title={t('gxFormulesAppliquees')} icon="math">
                   <div style={{ fontFamily:"'Courier New',monospace", fontSize:11, lineHeight:2.2,
                     background:"#f5f8ff", border:`1px solid ${C_BORDER}`, padding:"10px 12px" }}>
                     <div><b>u(T)</b> = −ln(−ln(1−1/T))</div>
@@ -1224,9 +1191,7 @@ function MainApp() {
                       ? `(TC/24)^(1−b) × 1000×S/(TC×3600)`
                       : `1000 × S / 86400`}</div>
                   </div>
-                </Panel>
-              </div>
-              <Panel title={`${t('gxDebitsExtrapoles')} ${station}`} icon="wave-sine" accent={C_TEAL} noPad>
+                </div>
                 <table style={{ width:"100%", borderCollapse:"collapse" }}>
                   <thead>
                     <tr>
@@ -1252,7 +1217,91 @@ function MainApp() {
                     })}
                   </tbody>
                 </table>
+                <div style={{ marginTop:10 }}>
+                  <CollapseSection title={`${t('gxTableauAjustement')} ${station} (n=${res.n})`}
+                    icon="table" open={showGumbelTable} onToggle={()=>setShowGumbelTable(v=>!v)}>
+                    <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                      <thead>
+                        <tr>
+                          {[t('gxRang'),t('gxAnnee'),t('gxPjmax24h'),t('gxFreqHazen'),
+                            t('gxVarReduite'),t('gxPjmaxEstimee')].map(h =>
+                            <th key={h} style={TH}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {res.rowsFull.map((r,i) => (
+                          <tr key={i} style={{ background:i%2===0?"#fff":C_STRIP }}>
+                            <td style={TD}>{r.rank}</td>
+                            <td style={{ ...TD, textAlign:"left", paddingLeft:10 }}>{r.year}</td>
+                            <td style={{ ...TD, fontWeight:600, color:C_BLUE }}>{r.pj.toFixed(1)}</td>
+                            <td style={TD}>{r.F.toFixed(6)}</td>
+                            <td style={TD}>{r.u.toFixed(6)}</td>
+                            <td style={{ ...TD, color:C_TEAL }}>{r.pEst.toFixed(3)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </CollapseSection>
+                </div>
               </Panel>
+
+              {mcResultats.filter(r=>!r.erreur).length > 0 && (
+                <Panel title={t('resMethodesTitre')} icon="stack-2" accent={C_BLUE} noPad>
+                  <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                    <thead>
+                      <tr>
+                        {[t('p3ColMethode'),t('p3ColQp'),t('p3ColT')].map(h =>
+                          <th key={h} style={TH}>{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mcResultats.filter(r=>!r.erreur).map((r,i) => (
+                        <tr key={r.id} style={{ background:i%2===0?"#fff":C_STRIP }}>
+                          <td style={{ ...TD, textAlign:"left", paddingLeft:8 }}>{r.methode}</td>
+                          <td style={{ ...TD, fontWeight:700, color:C_TEAL }}>{r.q_m3s.toFixed(3)}</td>
+                          <td style={TD}>{r.T}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Panel>
+              )}
+
+              {(() => {
+                const T_COMPARAISON = parseFloat(mc.T) || 100;
+                const eGradex = res.extrap.find(e => e.T === T_COMPARAISON);
+                const METHODES_AVEC_TC = new Set(['rationnelle', 'tr55']);
+                const lignes = [
+                  ...(eGradex ? [{ id:'gradex', methode:'GRADEX (Guillot & Duband, 1967)', q_m3s:eGradex.Qp, T:eGradex.T, tc: tc || null }] : []),
+                  ...mcResultats.filter(r=>!r.erreur).map(r => ({ ...r, tc: METHODES_AVEC_TC.has(r.id) ? mc.tc_h : null })),
+                ];
+                if (!lignes.length) return null;
+                const vals = lignes.map(l => l.q_m3s);
+                const qMin = Math.min(...vals), qMax = Math.max(...vals);
+                return (
+                  <Panel title={t('resComparatifTitre')} icon="chart-bar" accent={C_AMBER} noPad>
+                    <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                      <thead>
+                        <tr>
+                          {[t('resColMethode'),t('resColQp'),t('resColT'),t('resColTc')].map(h =>
+                            <th key={h} style={{ ...TH, background:"#f0dfc0", color:"#7a4a00" }}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lignes.map((l,i) => (
+                          <tr key={l.id} style={{ background: l.q_m3s===qMax?"#fff0c0":l.q_m3s===qMin?"#e0f0ff":(i%2===0?"#fff":C_STRIP) }}>
+                            <td style={{ ...TD, textAlign:"left", paddingLeft:8, fontWeight:l.id==='gradex'?700:400 }}>{l.methode}</td>
+                            <td style={{ ...TD, fontWeight:700, color:C_AMBER }}>{l.q_m3s.toFixed(3)}</td>
+                            <td style={TD}>{l.T}</td>
+                            <td style={TD}>{l.tc ? `${l.tc} h` : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div style={{ fontSize:10, color:"#888", padding:"6px 10px" }}>{t('resComparatifHint')}</div>
+                  </Panel>
+                );
+              })()}
             </>
           )
         )}

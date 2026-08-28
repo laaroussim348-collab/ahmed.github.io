@@ -843,8 +843,12 @@ const GX = {
     tbDonnees: 'données', tbGradexOk: 'GRADEX OK',
 
     // -- Onglets --
-    tabDonnees: 'Données', tabTableau: 'Tableau Gumbel', tabGradex: 'GRADEX',
+    tabDonnees: 'Données', tabTableau: 'Tableau Gumbel', tabGradex: 'GRADEX', tabResultats: 'Résultats',
     tabGraphiques: 'Graphiques', tabRapport: 'Rapport', tabMethodes: 'Méthodes complémentaires',
+    resGradexTitre: 'Résultats — GRADEX', resMethodesTitre: 'Résultats — Méthodes complémentaires',
+    resComparatifTitre: 'Tableau comparatif des débits de pointe',
+    resColMethode: 'Méthode', resColQp: 'Qp (m³/s)', resColT: 'T (ans)', resColTc: 'tc',
+    resComparatifHint: 'Comparaison au T sélectionné dans Méthodes complémentaires. En jaune : le débit le plus élevé ; en bleu : le plus faible.',
 
     // -- Onglet Données : bassin GRADEX --
     gxParamBv: 'Paramètres du Bassin Versant',
@@ -992,8 +996,12 @@ const GX = {
     tbWord: 'Word', tbCopier: 'نسخ', tbCouper: 'قص', tbColler: 'لصق',
     tbDonnees: 'معطيات', tbGradexOk: 'GRADEX جاهز',
 
-    tabDonnees: 'المعطيات', tabTableau: 'جدول Gumbel', tabGradex: 'GRADEX',
+    tabDonnees: 'المعطيات', tabTableau: 'جدول Gumbel', tabGradex: 'GRADEX', tabResultats: 'النتائج',
     tabGraphiques: 'الرسوم البيانية', tabRapport: 'التقرير', tabMethodes: 'طرق تكميلية',
+    resGradexTitre: 'النتائج — GRADEX', resMethodesTitre: 'النتائج — الطرق التكميلية',
+    resComparatifTitre: 'جدول مقارنة التدفقات القصوى',
+    resColMethode: 'الطريقة', resColQp: 'Qp (م³/ث)', resColT: 'T (سنة)', resColTc: 'tc',
+    resComparatifHint: 'مقارنة عند فترة العودة T المختارة في الطرق التكميلية. باللون الأصفر: أعلى تدفق؛ بالأزرق: أدنى تدفق.',
 
     gxParamBv: 'معاملات الحوض المائي',
     gxStation: 'المحطة / اسم الحوض',
@@ -1131,8 +1139,12 @@ const GX = {
     tbWord: 'Word', tbCopier: 'Copy', tbCouper: 'Cut', tbColler: 'Paste',
     tbDonnees: 'data points', tbGradexOk: 'GRADEX OK',
 
-    tabDonnees: 'Data', tabTableau: 'Gumbel Table', tabGradex: 'GRADEX',
+    tabDonnees: 'Data', tabTableau: 'Gumbel Table', tabGradex: 'GRADEX', tabResultats: 'Results',
     tabGraphiques: 'Charts', tabRapport: 'Report', tabMethodes: 'Additional methods',
+    resGradexTitre: 'Results — GRADEX', resMethodesTitre: 'Results — Additional methods',
+    resComparatifTitre: 'Peak discharge comparison table',
+    resColMethode: 'Method', resColQp: 'Qp (m³/s)', resColT: 'T (yr)', resColTc: 'tc',
+    resComparatifHint: 'Comparison at the T selected in Additional methods. Yellow: highest discharge; blue: lowest.',
 
     gxParamBv: 'Watershed Parameters',
     gxStation: 'Station / Watershed name',
@@ -1270,8 +1282,12 @@ const GX = {
     tbWord: 'Word', tbCopier: 'Copiar', tbCouper: 'Cortar', tbColler: 'Pegar',
     tbDonnees: 'datos', tbGradexOk: 'GRADEX OK',
 
-    tabDonnees: 'Datos', tabTableau: 'Tabla Gumbel', tabGradex: 'GRADEX',
+    tabDonnees: 'Datos', tabTableau: 'Tabla Gumbel', tabGradex: 'GRADEX', tabResultats: 'Resultados',
     tabGraphiques: 'Gráficos', tabRapport: 'Informe', tabMethodes: 'Métodos adicionales',
+    resGradexTitre: 'Resultados — GRADEX', resMethodesTitre: 'Resultados — Métodos adicionales',
+    resComparatifTitre: 'Tabla comparativa de caudales punta',
+    resColMethode: 'Método', resColQp: 'Qp (m³/s)', resColT: 'T (años)', resColTc: 'tc',
+    resComparatifHint: 'Comparación en el T seleccionado en Métodos adicionales. Amarillo: caudal más alto; azul: más bajo.',
 
     gxParamBv: 'Parámetros de la Cuenca',
     gxStation: 'Estación / Nombre de la cuenca',
