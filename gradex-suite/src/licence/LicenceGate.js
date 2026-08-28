@@ -39,7 +39,10 @@ async function postActiver(code) {
 function formaterRestant(heures, t) {
   if (heures == null || Number.isNaN(heures)) return '';
   if (heures < 1) return `${Math.max(1, Math.round(heures * 60))} min`;
-  return `${Math.floor(heures)} h`;
+  // Math.ceil (pas floor) : un essai qui vient de démarrer affiche bien
+  // "24 h restant" (pas "23 h", qui donnait l'impression trompeuse que
+  // l'essai avait déjà entamé une heure).
+  return `${Math.ceil(heures)} h`;
 }
 
 export default function LicenceGate({ children }) {

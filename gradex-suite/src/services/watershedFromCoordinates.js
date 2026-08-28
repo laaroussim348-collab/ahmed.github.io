@@ -49,11 +49,22 @@ export function analyserDelimitation(watershed, rivers, exutoireLatLon) {
     }
   }
 
-  if (watershed.surface_km2 < 0.5 || watershed.surface_km2 > 150) {
+  // Avertissement informatif seulement — la délimitation et le calcul des
+  // caractéristiques restent effectués normalement quelle que soit la
+  // surface obtenue (y compris pour les grands bassins versants, hors du
+  // champ d'application usuel du guide d'assainissement routier, dont les 7
+  // méthodes de débit de pointe sont calibrées pour de petits BV).
+  if (watershed.surface_km2 < 0.5) {
     avertissements.push(
-      `Surface obtenue (${watershed.surface_km2.toFixed(2)} km²) en dehors de la plage typique des petits ` +
-      `bassins versants couverts par ce guide (< 100-150 km²) : vérifiez que le point saisi est bien situé sur ` +
-      `un cours d'eau, pas à côté.`
+      `Surface obtenue (${watershed.surface_km2.toFixed(2)} km²) très petite : vérifiez que le point saisi est ` +
+      `bien situé sur un cours d'eau, pas à côté.`
+    );
+  } else if (watershed.surface_km2 > 150) {
+    avertissements.push(
+      `Surface obtenue (${watershed.surface_km2.toFixed(2)} km²) au-delà de la plage usuelle des petits bassins ` +
+      `versants couverts par le guide d'assainissement routier (< 100-150 km²) : le calcul est effectué ` +
+      `normalement, mais les 7 méthodes de débit de pointe de cet onglet ne sont calibrées/validées que pour ` +
+      `de petits BV — pour un grand bassin versant, privilégiez la méthode GRADEX (onglet Données).`
     );
   }
 

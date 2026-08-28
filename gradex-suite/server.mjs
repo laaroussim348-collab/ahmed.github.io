@@ -110,9 +110,13 @@ async function apiActiver(req, res) {
 // ---------------------------------------------------------------------
 async function apiDelineation(lat, lon, res) {
   try {
+    // Délais généreux (60s) : un grand bassin versant demande à mghydro.com
+    // un calcul plus long qu'un petit BV routier — un délai trop court le
+    // ferait échouer systématiquement ("la délimitation des grands BV ne
+    // marche pas").
     const [watershedJson, riversJson] = await Promise.all([
-      fetchJson(buildWatershedUrl(lat, lon), 30000),
-      fetchJson(buildUpstreamRiversUrl(lat, lon), 30000),
+      fetchJson(buildWatershedUrl(lat, lon), 60000),
+      fetchJson(buildUpstreamRiversUrl(lat, lon), 60000),
     ]);
     const watershed = parseWatershedResponse(watershedJson);
     const rivers = parseRiversResponse(riversJson);

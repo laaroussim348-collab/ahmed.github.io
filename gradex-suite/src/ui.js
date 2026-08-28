@@ -73,10 +73,11 @@ export function Select({ label, value, onChange, options, unite }) {
         {label}{unite ? <span style={{ color:'#888', fontWeight:400 }}> ({unite})</span> : null}
       </label>
       <select value={value} onChange={e=>onChange(e.target.value)}
+        title={options.find(o => String(o.value) === String(value))?.label}
         style={{ width:'100%', boxSizing:'border-box', height:24, padding:'0 4px',
           border:`1px solid ${C_BORDER}`, borderRadius:1, fontSize:12, background:'#fff',
-          fontFamily:'Arial,sans-serif' }}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          fontFamily:'Arial,sans-serif', textOverflow:'ellipsis' }}>
+        {options.map(o => <option key={o.value} value={o.value} title={o.label}>{o.label}</option>)}
       </select>
     </div>
   );

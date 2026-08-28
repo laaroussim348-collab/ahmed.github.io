@@ -182,6 +182,64 @@ non traduits dans BV-Calc ont été corrigées :
    toutes une entrée dédiée dans `src/i18n.js` (préfixe `fix*`) dans les 4
    langues, utilisées par `src/tabs/MethodesTab.js`.
 
+## Onglets fusionnés : "Données & Méthodes"
+
+Les anciens onglets "Données" (GRADEX) et "Méthodes complémentaires"
+(BV-Calc) sont désormais **un seul onglet** — plus besoin de naviguer entre
+deux pages pour un même projet (`App.js`, `TABS` : l'entrée `methodes` a été
+retirée, le contenu de `MethodesTab` s'affiche à la suite du contenu GRADEX
+sous le même `tab === "donnees"`).
+
+**GRADEX est désormais une méthode comme les autres** : une case "GRADEX"
+apparaît dans le bloc "Sélection des méthodes à calculer", au même titre que
+Rationnelle/Mac-Math/etc. — grisée tant que les données (Pjmax ≥ 3 valeurs +
+surface) sont incomplètes, à cocher puis "Recalculer" pour l'ajouter au
+tableau de résultats et au comparatif (`lignesComparatif`, dans `App.js`,
+provient maintenant entièrement de `mcResultats` — plus d'injection
+automatique et inconditionnelle d'une ligne GRADEX). Le calcul lui-même
+(`computeGRADEX`) reste strictement inchangé ; seule sa représentation dans
+l'UI est désormais uniforme avec les 8 méthodes BV-Calc.
+
+**Téléchargement automatique de la série Pjmax avec la délimitation** :
+quand la délimitation automatique du bassin (mghydro.com) aboutit,
+`onImportToGradex()` transmet aussi les coordonnées (lat/lon) de l'exutoire
+à `App.js`, qui déclenche alors lui-même l'import Open-Meteo ERA5 (même
+fonction que le bouton manuel "Importer depuis Open-Meteo ERA5", juste
+automatisée) — sans écraser une série déjà présente (collée/importée
+manuellement).
+
+## Corrections (retours utilisateur du 28/08/2026)
+
+- **Pente non transmise à Mac-Math / Burkli-Ziegler** : la pente globale/
+  pondérée était bien calculée et affichée, mais jamais réellement écrite
+  dans l'état (`v.pente_m_par_m`) que ces deux méthodes lisent — corrigé par
+  un effet de synchronisation automatique dans `MethodesTab.js` (respecte le
+  sélecteur global/pondérée existant, `v.tcPenteSource`).
+- **Couche "Occupation du sol" (ESA WorldCover/Terrascope) retirée** : ce
+  service WMS s'est révélé indisponible aussi bien en environnement de
+  développement qu'en usage réel — supprimée de `DelimitationCarte.js` sur
+  demande explicite, plutôt que de continuer à afficher un bouton qui ne
+  fonctionne pas.
+- **Texte tronqué dans le menu déroulant Cr** : les libellés BCEOM étaient
+  coupés artificiellement à 36 caractères (`.slice(0,36)…`) — le menu
+  affiche maintenant le texte complet (champ mis sur sa propre ligne, plus
+  large, dans `MethodesTab.js`).
+- **Carte de délimitation** : grille de coordonnées (latitude/longitude,
+  activable/désactivable, incluse dans l'export PNG), zoom min/max élargi
+  (dézoom jusqu'au niveau 2/3, zoom jusqu'au niveau 19) pour couvrir aussi
+  les grands bassins versants, résolution d'export doublée au minimum
+  (qualité impression/rapport), délais réseau du service de délimitation
+  augmentés à 60s (un grand bassin demande un calcul plus long), et
+  l'avertissement "surface hors plage usuelle" reformulé pour ne plus
+  laisser croire à un rejet (le calcul est toujours effectué).
+- **Essai 24h** : mécanisme vérifié, fonctionne comme prévu (verrouillage
+  strict 24h après le tout premier lancement, persistant dans
+  `.essai-local.json`) — un essai qui "ne marche plus" après plusieurs
+  heures d'utilisation intensive est le comportement attendu, pas un bug.
+  Seule correction apportée : l'affichage du temps restant utilisait
+  `Math.floor` (un essai qui vient de démarrer affichait "23 h restant" au
+  lieu de "24 h") — remplacé par `Math.ceil` dans `LicenceGate.js`.
+
 ## Limites connues
 
 - Les nombres groupés (ex. "1 000", "10 000") s'affichent dans l'ordre

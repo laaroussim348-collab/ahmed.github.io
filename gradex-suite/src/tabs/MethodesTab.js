@@ -73,7 +73,7 @@ const ADAPTATEURS = {
 };
 
 export const MC_ETAT_INITIAL = {
-  surface_km2: '', perimetre_km: '', longueur_km: '', altitude_min_m: '', altitude_max_m: '', altitudeMoyenne_m: '',
+  surface_km2: '', perimetre_km: '', longueur_km: '', altitude_min_m: '', altitude_max_m: '', altitudeMoyenne_m: '', pente_m_par_m: '',
   T: 100, a: '', b: '', h1h_mm: '', cr: '', CN: '',
   macMath_K: '', macMath_convention: 'excel', pma_mm_an: '',
   malletGautier_K: 2, malletGautier_a: 20, fullerII_a: 2, fullerII_N: '', hazanLazarevich_a: 1,
@@ -88,7 +88,7 @@ export const MC_ETAT_INITIAL = {
   geoLat: '', geoLon: '',
 };
 
-export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange, surfaceGradex, nomProjet, onCarteImage }) {
+export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange, surfaceGradex, nomProjet, onCarteImage, gradexDisponible, gradexResultat }) {
   const { t } = useI18n();
   const patch = useCallback(p => setV(prev => ({ ...prev, ...p })), [setV]);
 
@@ -131,6 +131,19 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
     try { return watershed.penteMoyennePonderee(altitudes, longueurs); }
     catch (e) { return { erreur: e.message }; }
   }, [v.troncons]);
+
+  // Pente moyenne (P) requise par Mac-Math et Burkli-Ziegler (DEPENDANCES ci-
+  // dessus) : on la synchronise automatiquement dans v.pente_m_par_m à partir
+  // de la pente calculée (globale ou pondérée selon v.tcPenteSource — même
+  // source que celle utilisée par calculerTC()), pour que ces deux méthodes
+  // deviennent sélectionnables dès que altitude min/max + longueur (ou les
+  // tronçons) sont renseignés, sans ressaisie manuelle.
+  useEffect(() => {
+    const pente = v.tcPenteSource === 'ponderee' ? pentePonderee : penteGlobale;
+    const valeur = pente && !pente.erreur ? pente.pente_m_par_m : '';
+    if (v.pente_m_par_m !== valeur) patch({ pente_m_par_m: valeur });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [penteGlobale, pentePonderee, v.tcPenteSource]);
 
   function setTroncon(i, cle, val) {
     const t2 = v.troncons.slice();
@@ -284,7 +297,10 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
       // la surface extraite par la délimitation ne doit pas être ressaisie
       // manuellement. On utilise data.surface_km2 directement (pas v.surface_km2,
       // qui n'est pas encore à jour : patch() ci-dessus est asynchrone).
-      onImportToGradex?.({ surface: data.surface_km2 });
+      // lat/lon transmis aussi : permet à App.js de lancer automatiquement le
+      // téléchargement de la série Pjmax (Open-Meteo ERA5) pour ce même point,
+      // sans clic manuel séparé sur "Importer depuis Open-Meteo ERA5".
+      onImportToGradex?.({ surface: data.surface_km2, lat, lon });
     } catch (e) { html += `❌ ${t('erreur')} ${e.message}`; }
 
     try {
@@ -336,12 +352,32 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
   function cocherTout() {
     const set = new Set(v.methodesSelectionnees);
     METHODES.forEach(({ meta }) => { if (!champsManquants(meta.id).length) set.add(meta.id); });
+    if (gradexDisponible) set.add('gradex');
     patch({ methodesSelectionnees: [...set] });
   }
 
+  // GRADEX (Guillot & Duband) : traité ici comme une méthode parmi les
+  // autres (case à cocher dans "Sélection des méthodes", même tableau de
+  // résultats) — mais son calcul (extrapolation Gumbel des Pjmax, formule
+  // GRADEX INCHANGÉE) reste dans App.js (computeGRADEX), pas dans le
+  // registre METHODES/getMethode() de BV-Calc. gradexResultat/gradexDisponible
+  // (props) relaient simplement son résultat déjà calculé, sans recalcul ici.
   function calculerResultats() {
     const out = [];
     for (const id of v.methodesSelectionnees) {
+      if (id === 'gradex') {
+        if (gradexResultat?.q_m3s != null) {
+          out.push({
+            id, methode: 'GRADEX', q_m3s: gradexResultat.q_m3s, T: gradexResultat.T, erreur: null,
+            etapes: [{ titre: t('gradexMethodeTitre'), resultat: `Qp(T=${gradexResultat.T}) = ${fmt(gradexResultat.q_m3s,3)} m³/s` }],
+            hypotheses: [t('gradexDetailHint')],
+            source: 'computeGRADEX (App.js) — GRADEX, Guillot & Duband 1967',
+          });
+        } else {
+          out.push({ id, methode: 'GRADEX', q_m3s: null, T: '—', erreur: t('gradexDonneesInsuffisantes') });
+        }
+        continue;
+      }
       const { meta, calculer } = getMethode(id);
       try {
         const args = ADAPTATEURS[id](v);
@@ -580,9 +616,11 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
         <Field label={t('crDirect')} value={v.cr} onChange={x=>patch({cr:x})} type="number" />
         <div style={{ borderTop:`1px solid ${C_BORDER}`, paddingTop:8, marginTop:6 }}>
           <b style={{ fontSize:11.5, color:C_BLUE }}>{t('crTableTitre')}</b>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginTop:6, marginBottom:6 }}>
+          <div style={{ marginTop:6 }}>
             <Select label={t('crCode')} value={v.crCode} onChange={x=>patch({crCode:x})}
-              options={Object.entries(OCCUPATIONS_SOL).map(([c,o])=>({value:c,label:`${c} — ${String(o.bceom).slice(0,36)}…`}))} />
+              options={Object.entries(OCCUPATIONS_SOL).map(([c,o])=>({value:c,label:`${c} — ${o.bceom}`}))} />
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:6 }}>
             <Select label={t('crGroupe')} value={v.crGroupe} onChange={x=>patch({crGroupe:x})}
               options={[{value:'grossiers',label:t('crGrossiers')},{value:'moyens',label:t('crMoyens')},{value:'fins',label:t('crFins')}]} />
             <Select label={t('crPente')} value={v.crPente} onChange={x=>patch({crPente:x})}
@@ -665,6 +703,20 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
       <Panel title={t('mcSelectionTitre')} icon="checklist" accent={C_TEAL}
         headerRight={<button onClick={cocherTout} style={{ padding:'3px 10px', fontSize:11, background:'#fff', border:`1px solid ${C_BORDER}`, cursor:'pointer' }}>{t('p2CocherTout')}</button>}>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))', gap:8 }}>
+          {(() => {
+            const cocheGradex = v.methodesSelectionnees.includes('gradex') && gradexDisponible;
+            return (
+              <label style={{ border:`1px solid ${C_BORDER}`, padding:'8px 10px', cursor: gradexDisponible?'pointer':'not-allowed',
+                background: cocheGradex ? '#e8f8ee' : gradexDisponible ? '#fff' : '#f5f5f5', opacity: gradexDisponible?1:0.65 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
+                  <input type="checkbox" checked={cocheGradex} disabled={!gradexDisponible} onChange={()=>toggleMethode('gradex')} />
+                  <b style={{ fontSize:11.5 }}>GRADEX</b>
+                  <span style={{ fontSize:9, background:'#d1fae5', color:'#065f46', padding:'1px 6px', borderRadius:8 }}>{t('tcRecommandee')}</span>
+                </div>
+                {!gradexDisponible && <div style={{ fontSize:9.5, color:'#a05000' }}>{t('donneesManquantes')} : {t('gradexChampsManquants')}</div>}
+              </label>
+            );
+          })()}
           {METHODES.map(({ meta }) => {
             const manquants = champsManquants(meta.id);
             const disponible = !manquants.length;
