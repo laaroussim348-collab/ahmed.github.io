@@ -417,7 +417,7 @@ function makeDischargeCanvas(res, station, cp) {
 
 // ─── Rapport Word avec graphiques embarqués ───────────────────
 function buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot,
-                                 mcResultats, lignesComparatif, carteImage, onDone }) {
+                                 mcResultats, lignesComparatif, carteImage, observations, onDone }) {
   if (!res) return;
 
   const fmtT = T => T >= 10000 ? "10 000" : T >= 1000 ? "1 000" : String(T);
@@ -479,6 +479,11 @@ ${img3 ? `<h3>Graphique — Comparaison des débits de pointe</h3><p>${img3}</p>
 <h2>${++nSection}. Cartes</h2>
 <p>Carte de délimitation du bassin versant (contour, réseau hydrographique et exutoire) :</p>
 <p><img src="${carteImage}" width="620" style="border:1px solid #ccc"/></p>` : "";
+
+    const obs = (observations || "").trim();
+    const observationsSection = obs ? `
+<h2>${++nSection}. Observations</h2>
+<p style="white-space:pre-wrap">${obs.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>` : "";
     const nConclusions = ++nSection;
 
     return `<!DOCTYPE html>
@@ -496,8 +501,18 @@ th{background:#1a3a6a;color:#fff;padding:5px 8px;text-align:center;font-size:10p
 td{padding:4px 8px;border:0.5px solid #ccc;font-size:10pt}
 p{line-height:1.6;text-align:justify}
 .footer{border-top:1px solid #ccc;padding-top:6px;text-align:center;color:#888;font-size:9pt;margin-top:24px}
+.page-garde{page-break-after:always;text-align:center;padding-top:220px}
 </style></head>
 <body>
+<div class="page-garde">
+  <div style="font-size:13pt;letter-spacing:2px;color:#666">RAPPORT HYDROLOGIQUE</div>
+  <div style="font-size:24pt;font-weight:bold;color:#1a3a6a;margin-top:18px;border-top:3px solid #1a3a6a;border-bottom:3px solid #1a3a6a;padding:18px 0">
+    ${station}
+  </div>
+  <div style="font-size:13pt;color:#0a5040;margin-top:22px">Méthode GRADEX${mcReussis.length ? " + Méthodes complémentaires (Guide technique d'assainissement routier 2020)" : ""}</div>
+  <div style="font-size:11pt;color:#555;margin-top:10px">Surface du bassin versant : ${surface} km²</div>
+  <div style="font-size:11pt;color:#555;margin-top:30px">${today}</div>
+</div>
 <h1>RAPPORT HYDROLOGIQUE — MÉTHODE GRADEX${mcReussis.length ? " + MÉTHODES COMPLÉMENTAIRES" : ""}</h1>
 <p style="text-align:center;color:#444;font-size:11pt;margin-top:4px">
   Station : <b>${station}</b> &nbsp;|&nbsp; Surface : ${surface} km² &nbsp;|&nbsp; Date : ${today}
@@ -538,6 +553,7 @@ ${img2 ? `<h3>Graphique — Débits de crue</h3><p>${img2}</p>` : ""}
 ${mcSection}
 ${comparatifSection}
 ${carteSection}
+${observationsSection}
 <h2>${nConclusions}. Conclusions</h2>
 <p>L'analyse des <b>${res.n}</b> précipitations de la station <b>${station}</b>
  (µ = ${f2(res.mean)} mm, σ = ${f2(res.std)} mm) donne un GRADEX de <b>${f3(res.a)} mm</b>.
@@ -731,6 +747,7 @@ function MainApp() {
   const [mc, setMc] = useState(MC_ETAT_INITIAL);
   const [mcResultats, setMcResultats] = useState([]);
   const [carteImage, setCarteImage] = useState(null); // dataURL PNG — dernière image de délimitation exportée (pour le rapport, point 14 "Cartes")
+  const [observations, setObservations] = useState(""); // notes libres de l'ingénieur — section "Observations" du rapport (point 14)
 
   const gumbelRef    = useRef(null);
   const dischargeRef = useRef(null);
@@ -864,6 +881,21 @@ function MainApp() {
     ];
   }, [res, mc.T, mc.tc_h, mcResultats, tc]);
 
+  // Numérotation dynamique des sections de l'onglet Rapport (aperçu à l'écran)
+  // — même logique que buildAndDownloadWord, pour que les deux restent cohérents
+  // quel que soit le sous-ensemble de sections réellement présentes.
+  const numerosRapport = useMemo(() => {
+    let n = 2; // 1=Paramètres, 2=Débits extrapolés (toujours présents)
+    const mcOk = mcResultats.filter(r=>!r.erreur).length > 0;
+    const compOk = lignesComparatif.length > 1;
+    const obsOk = observations.trim().length > 0;
+    const nMc = mcOk ? ++n : null;
+    const nComp = compOk ? ++n : null;
+    const nObs = obsOk ? ++n : null;
+    const nConclusions = ++n;
+    return { nMc, nComp, nObs, nConclusions };
+  }, [mcResultats, lignesComparatif, observations]);
+
   const fmtT = T => T>=10000?"10 000":T>=1000?"1 000":String(T);
 
   const TABS = [
@@ -959,7 +991,7 @@ function MainApp() {
         <TBtn icon="file-type-doc" label={t('tbWord')}       onClick={()=>{
           if (!res) return;
           setWordLoad(true);
-          buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage,
+          buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage, observations,
             onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
         }} disabled={!res||wordLoad} title="Exporter rapport Word avec graphiques" />
         <TSep />
@@ -1501,7 +1533,7 @@ function MainApp() {
                 <button onClick={()=>{
                   if(!res) return;
                   setWordLoad(true);
-                  buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage,
+                  buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage, observations,
                     onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
                 }} disabled={wordLoad||!res}
                   style={{ padding:"5px 16px", background:wordLoad?"#aaa":C_TEAL, color:"#fff",
@@ -1515,6 +1547,16 @@ function MainApp() {
                 </div>
               </div>
               {surfWarn && <SurfWarn t={t} />}
+
+              <Panel title={t('gxObservationsTitre')} icon="notes">
+                <p style={{ fontSize:11, color:'#888', margin:'0 0 6px' }}>{t('gxObservationsHint')}</p>
+                <textarea value={observations} onChange={e=>setObservations(e.target.value)}
+                  placeholder={t('gxObservationsPlaceholder')}
+                  style={{ width:'100%', boxSizing:'border-box', height:90, fontSize:12,
+                    fontFamily:'Arial,sans-serif', resize:'vertical', border:`1px solid ${C_BORDER}`,
+                    padding:'8px 10px', lineHeight:1.6 }} />
+              </Panel>
+
               <div style={{ background:"#fff", border:`1px solid ${C_BORDER}`, padding:"32px 44px",
                 maxWidth:820, boxShadow:"1px 1px 5px rgba(0,0,0,0.1)" }}>
                 <div style={{ textAlign:"center", borderBottom:`2px solid ${C_BLUE}`, paddingBottom:14, marginBottom:22 }}>
@@ -1570,24 +1612,8 @@ function MainApp() {
                   </table>
                 </RS>
 
-                <RS n="3" title={t('gxS3Conclusions')}>
-                  <p style={{ fontSize:12, lineHeight:1.9, textAlign:"justify" }}>
-                    {t('gxConclusionIntro')} <b>{res.n}</b> Pjmax {t('gxConclusionPjmax')} <b>{station}</b>
-                    &nbsp;(µ={f2(res.mean)} mm, σ={f2(res.std)} mm) {t('gxConclusionDonne')} <b>{f3(res.a)} mm</b>.
-                    {res.useMontana && ` Correction Montana : TC=${tc}h, b=${bMontana}.`}
-                    {" "}{t('gxConclusionAncre')} Q(T₀={tPivot} ans) = <b>{f2(res.Q0)} m³/s</b> :
-                  </p>
-                  <ul style={{ fontSize:12, lineHeight:2.2, paddingLeft:20 }}>
-                    {res.extrap.map(e => (
-                      <li key={e.T}>
-                        Qp(T={fmtT(e.T)} ans) = <b style={{ color:e.T>=1000?C_AMBER:C_TEAL }}>{e.Qp.toFixed(1)} m³/s</b>
-                      </li>
-                    ))}
-                  </ul>
-                </RS>
-
                 {mcResultats.filter(r=>!r.erreur).length > 0 && (
-                  <RS n="4" title={t('gxS4MethodesComp')}>
+                  <RS n={numerosRapport.nMc} title={t('gxS4MethodesComp')}>
                     <table style={{ width:"70%", borderCollapse:"collapse", fontSize:12 }}>
                       <thead>
                         <tr style={{ background:"#e8f0f8" }}>
@@ -1609,7 +1635,7 @@ function MainApp() {
                 )}
 
                 {lignesComparatif.length > 1 && (
-                  <RS n="5" title={t('resComparatifTitre')}>
+                  <RS n={numerosRapport.nComp} title={t('resComparatifTitre')}>
                     <table style={{ width:"70%", borderCollapse:"collapse", fontSize:12 }}>
                       <thead>
                         <tr style={{ background:"#f0dfc0" }}>
@@ -1629,6 +1655,28 @@ function MainApp() {
                     </table>
                   </RS>
                 )}
+
+                {observations.trim() && (
+                  <RS n={numerosRapport.nObs} title={t('gxObservationsTitre')}>
+                    <p style={{ fontSize:12, lineHeight:1.8, whiteSpace:'pre-wrap' }}>{observations}</p>
+                  </RS>
+                )}
+
+                <RS n={numerosRapport.nConclusions} title={t('gxS3Conclusions')}>
+                  <p style={{ fontSize:12, lineHeight:1.9, textAlign:"justify" }}>
+                    {t('gxConclusionIntro')} <b>{res.n}</b> Pjmax {t('gxConclusionPjmax')} <b>{station}</b>
+                    &nbsp;(µ={f2(res.mean)} mm, σ={f2(res.std)} mm) {t('gxConclusionDonne')} <b>{f3(res.a)} mm</b>.
+                    {res.useMontana && ` Correction Montana : TC=${tc}h, b=${bMontana}.`}
+                    {" "}{t('gxConclusionAncre')} Q(T₀={tPivot} ans) = <b>{f2(res.Q0)} m³/s</b> :
+                  </p>
+                  <ul style={{ fontSize:12, lineHeight:2.2, paddingLeft:20 }}>
+                    {res.extrap.map(e => (
+                      <li key={e.T}>
+                        Qp(T={fmtT(e.T)} ans) = <b style={{ color:e.T>=1000?C_AMBER:C_TEAL }}>{e.Qp.toFixed(1)} m³/s</b>
+                      </li>
+                    ))}
+                  </ul>
+                </RS>
 
                 <div style={{ borderTop:`1px solid ${C_BORDER}`, paddingTop:8, marginTop:20,
                   fontSize:10, color:"#aaa", textAlign:"center" }}>
