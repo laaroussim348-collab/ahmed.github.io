@@ -81,6 +81,8 @@ const BV = {
     geoManuel: 'Vous pouvez renseigner les champs manuellement ci-dessous.',
     carteAgrandir: 'Agrandir la carte (plein écran)',
     carteApercuHint: "Aperçu de la délimitation. Cliquez sur 🔍 pour choisir l'exutoire sur une carte plein écran.",
+    carteTitreDelimitationDe: 'Délimitation du bassin versant de',
+    carteTitreDelimitationGenerique: 'Délimitation du bassin versant',
     carteTitrePlein: 'Choisir l\'exutoire du bassin versant',
     carteInstructions: "Naviguez sur la carte (glisser, molette), cliquez à l'endroit exact de l'exutoire (point le plus bas du cours d'eau étudié), puis « Confirmer ».",
     carteExutoireChoisi: 'Point choisi :',
@@ -184,6 +186,9 @@ const BV = {
     fullerA: 'Coefficient a', fullerN: 'Coefficient N',
     hlTitre: 'Hazan et Lazarevich',
     hlA: 'Coefficient de croissance a',
+    frTitre: 'Francou-Rodier (transposition régionale)',
+    frHint: "Transpose le débit d'une station de référence jaugée (S_ref, Q_ref) vers le bassin étudié, via le coefficient régional K(T). Recommandée par le guide pour les grands bassins (S > 100-150 km²) — nécessite une station de référence climatiquement similaire.",
+    frSurfaceRef: 'Surface — station de référence (S_ref)', frQRef: 'Débit de pointe connu — station de référence (Q_ref)',
     source: 'Source',
 
     p2Titre: '02 — Sélection des méthodes',
@@ -271,6 +276,8 @@ const BV = {
     geoManuel: 'يمكنك إدخال الحقول يدويا أدناه.',
     carteAgrandir: 'تكبير الخريطة (ملء الشاشة)',
     carteApercuHint: 'معاينة التحديد. اضغط 🔍 لاختيار المصب على خريطة بملء الشاشة.',
+    carteTitreDelimitationDe: 'تحديد حوض',
+    carteTitreDelimitationGenerique: 'تحديد الحوض المائي',
     carteTitrePlein: 'اختيار مصب الحوض المائي',
     carteInstructions: 'تنقل داخل الخريطة (سحب، عجلة الفأرة)، انقر على الموضع الدقيق للمصب (أدنى نقطة في مجرى الوادي المدروس)، ثم اضغط «تأكيد».',
     carteExutoireChoisi: 'النقطة المختارة:',
@@ -374,6 +381,9 @@ const BV = {
     fullerA: 'المعامل a', fullerN: 'المعامل N',
     hlTitre: 'معادلة Hazan وLazarevich',
     hlA: 'معامل النمو a',
+    frTitre: 'معادلة Francou-Rodier (نقل إقليمي للتدفق)',
+    frHint: 'تنقل تدفق محطة مرجعية مقاسة (S_ref، Q_ref) إلى الحوض المدروس، عبر المعامل الإقليمي K(T). يوصي بها الدليل للأحواض الكبيرة (S > 100-150 كم²) — تتطلب محطة مرجعية مشابهة مناخيًا.',
+    frSurfaceRef: 'مساحة المحطة المرجعية (S_ref)', frQRef: 'التدفق الأقصى المعروف بالمحطة المرجعية (Q_ref)',
     source: 'المصدر',
 
     p2Titre: '02 — اختيار الطرق',
@@ -461,6 +471,8 @@ const BV = {
     geoManuel: 'You can fill in the fields manually below.',
     carteAgrandir: 'Expand the map (fullscreen)',
     carteApercuHint: 'Delineation preview. Click 🔍 to pick the outlet on a fullscreen map.',
+    carteTitreDelimitationDe: 'Watershed delineation of',
+    carteTitreDelimitationGenerique: 'Watershed delineation',
     carteTitrePlein: 'Pick the watershed outlet',
     carteInstructions: "Navigate the map (drag, scroll to zoom), click on the exact outlet location (the lowest point of the studied stream), then click \"Confirm\".",
     carteExutoireChoisi: 'Point chosen:',
@@ -564,6 +576,9 @@ const BV = {
     fullerA: 'Coefficient a', fullerN: 'Coefficient N',
     hlTitre: 'Hazan and Lazarevich',
     hlA: 'Growth coefficient a',
+    frTitre: 'Francou-Rodier (regional transposition)',
+    frHint: "Transposes the peak flow from a gauged reference station (S_ref, Q_ref) to the studied basin, via the regional coefficient K(T). Recommended by the guide for large basins (S > 100-150 km²) — requires a climatically similar reference station.",
+    frSurfaceRef: 'Reference station surface (S_ref)', frQRef: 'Known peak flow — reference station (Q_ref)',
     source: 'Source',
 
     p2Titre: '02 — Method selection',
@@ -651,6 +666,8 @@ const BV = {
     geoManuel: 'Puede rellenar los campos manualmente a continuación.',
     carteAgrandir: 'Ampliar el mapa (pantalla completa)',
     carteApercuHint: 'Vista previa de la delimitación. Haga clic en 🔍 para elegir el punto de desagüe en un mapa a pantalla completa.',
+    carteTitreDelimitationDe: 'Delimitación de la cuenca de',
+    carteTitreDelimitationGenerique: 'Delimitación de la cuenca',
     carteTitrePlein: 'Elegir el punto de desagüe de la cuenca',
     carteInstructions: 'Navegue por el mapa (arrastrar, rueda para zoom), haga clic en la ubicación exacta del desagüe (punto más bajo del curso de agua estudiado) y luego «Confirmar».',
     carteExutoireChoisi: 'Punto elegido:',
@@ -754,6 +771,9 @@ const BV = {
     fullerA: 'Coeficiente a', fullerN: 'Coeficiente N',
     hlTitre: 'Hazan y Lazarevich',
     hlA: 'Coeficiente de crecimiento a',
+    frTitre: 'Francou-Rodier (transposición regional)',
+    frHint: 'Transpone el caudal de una estación de referencia aforada (S_ref, Q_ref) a la cuenca estudiada, mediante el coeficiente regional K(T). Recomendada por la guía para grandes cuencas (S > 100-150 km²) — requiere una estación de referencia climáticamente similar.',
+    frSurfaceRef: 'Superficie — estación de referencia (S_ref)', frQRef: 'Caudal punta conocido — estación de referencia (Q_ref)',
     source: 'Fuente',
 
     p2Titre: '02 — Selección de métodos',
@@ -831,8 +851,12 @@ const GX = {
     tbDonnees: 'données', tbGradexOk: 'GRADEX OK',
 
     // -- Onglets --
-    tabDonnees: 'Données', tabTableau: 'Tableau Gumbel', tabGradex: 'GRADEX',
+    tabDonnees: 'Données', tabTableau: 'Tableau Gumbel', tabGradex: 'GRADEX', tabResultats: 'Résultats',
     tabGraphiques: 'Graphiques', tabRapport: 'Rapport', tabMethodes: 'Méthodes complémentaires',
+    resGradexTitre: 'Résultats — GRADEX', resMethodesTitre: 'Résultats — Méthodes complémentaires',
+    resComparatifTitre: 'Tableau comparatif des débits de pointe',
+    resColMethode: 'Méthode', resColQp: 'Qp (m³/s)', resColT: 'T (ans)', resColTc: 'tc',
+    resComparatifHint: 'Comparaison au T sélectionné dans Méthodes complémentaires. En jaune : le débit le plus élevé ; en bleu : le plus faible.',
 
     // -- Onglet Données : bassin GRADEX --
     gxParamBv: 'Paramètres du Bassin Versant',
@@ -980,8 +1004,12 @@ const GX = {
     tbWord: 'Word', tbCopier: 'نسخ', tbCouper: 'قص', tbColler: 'لصق',
     tbDonnees: 'معطيات', tbGradexOk: 'GRADEX جاهز',
 
-    tabDonnees: 'المعطيات', tabTableau: 'جدول Gumbel', tabGradex: 'GRADEX',
+    tabDonnees: 'المعطيات', tabTableau: 'جدول Gumbel', tabGradex: 'GRADEX', tabResultats: 'النتائج',
     tabGraphiques: 'الرسوم البيانية', tabRapport: 'التقرير', tabMethodes: 'طرق تكميلية',
+    resGradexTitre: 'النتائج — GRADEX', resMethodesTitre: 'النتائج — الطرق التكميلية',
+    resComparatifTitre: 'جدول مقارنة التدفقات القصوى',
+    resColMethode: 'الطريقة', resColQp: 'Qp (م³/ث)', resColT: 'T (سنة)', resColTc: 'tc',
+    resComparatifHint: 'مقارنة عند فترة العودة T المختارة في الطرق التكميلية. باللون الأصفر: أعلى تدفق؛ بالأزرق: أدنى تدفق.',
 
     gxParamBv: 'معاملات الحوض المائي',
     gxStation: 'المحطة / اسم الحوض',
@@ -1119,8 +1147,12 @@ const GX = {
     tbWord: 'Word', tbCopier: 'Copy', tbCouper: 'Cut', tbColler: 'Paste',
     tbDonnees: 'data points', tbGradexOk: 'GRADEX OK',
 
-    tabDonnees: 'Data', tabTableau: 'Gumbel Table', tabGradex: 'GRADEX',
+    tabDonnees: 'Data', tabTableau: 'Gumbel Table', tabGradex: 'GRADEX', tabResultats: 'Results',
     tabGraphiques: 'Charts', tabRapport: 'Report', tabMethodes: 'Additional methods',
+    resGradexTitre: 'Results — GRADEX', resMethodesTitre: 'Results — Additional methods',
+    resComparatifTitre: 'Peak discharge comparison table',
+    resColMethode: 'Method', resColQp: 'Qp (m³/s)', resColT: 'T (yr)', resColTc: 'tc',
+    resComparatifHint: 'Comparison at the T selected in Additional methods. Yellow: highest discharge; blue: lowest.',
 
     gxParamBv: 'Watershed Parameters',
     gxStation: 'Station / Watershed name',
@@ -1258,8 +1290,12 @@ const GX = {
     tbWord: 'Word', tbCopier: 'Copiar', tbCouper: 'Cortar', tbColler: 'Pegar',
     tbDonnees: 'datos', tbGradexOk: 'GRADEX OK',
 
-    tabDonnees: 'Datos', tabTableau: 'Tabla Gumbel', tabGradex: 'GRADEX',
+    tabDonnees: 'Datos', tabTableau: 'Tabla Gumbel', tabGradex: 'GRADEX', tabResultats: 'Resultados',
     tabGraphiques: 'Gráficos', tabRapport: 'Informe', tabMethodes: 'Métodos adicionales',
+    resGradexTitre: 'Resultados — GRADEX', resMethodesTitre: 'Resultados — Métodos adicionales',
+    resComparatifTitre: 'Tabla comparativa de caudales punta',
+    resColMethode: 'Método', resColQp: 'Qp (m³/s)', resColT: 'T (años)', resColTc: 'tc',
+    resComparatifHint: 'Comparación en el T seleccionado en Métodos adicionales. Amarillo: caudal más alto; azul: más bajo.',
 
     gxParamBv: 'Parámetros de la Cuenca',
     gxStation: 'Estación / Nombre de la cuenca',

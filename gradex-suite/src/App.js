@@ -9,7 +9,7 @@
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import {
-  ComposedChart, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  ComposedChart, LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, Scatter, ResponsiveContainer
 } from "recharts";
 import { concentrationTime } from "./calculations/index.js";
@@ -348,6 +348,60 @@ function drawDischargeOnCanvas(canvas, extrap, station, cp) {
   ctx.fillStyle="#444"; ctx.fillText(t0('gxQPointe'), ML+IW-116, MT+28);
 }
 
+// Histogramme horizontal comparant Qp entre GRADEX et les méthodes BV-Calc
+// (point 11 de la demande — "Comparaison des débits de pointe").
+function drawComparisonOnCanvas(canvas, lignes, station) {
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext("2d");
+  const ML = 220, MR = 60, MT = 40, MB = 30;
+  const IW = W - ML - MR;
+  const rowH = Math.min(34, (H - MT - MB) / Math.max(lignes.length, 1));
+  const IH = rowH * lignes.length;
+
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+
+  const Qmax = Math.max(...lignes.map(l => l.q_m3s)) * 1.15 || 1;
+  const px = q => ML + (q / Qmax) * IW;
+
+  ctx.font = "bold 13px Arial"; ctx.fillStyle = "#8B5000"; ctx.textAlign = "center";
+  ctx.fillText(`Comparaison des débits de pointe — ${station}`, ML + IW / 2, 20);
+
+  ctx.strokeStyle = "#e5e5e5"; ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const x = ML + (i / 5) * IW;
+    ctx.beginPath(); ctx.moveTo(x, MT); ctx.lineTo(x, MT + IH); ctx.stroke();
+    ctx.fillStyle = "#666"; ctx.font = "10px Arial"; ctx.textAlign = "center";
+    ctx.fillText(((Qmax * i) / 5).toFixed(0), x, MT + IH + 16);
+  }
+
+  const qVals = lignes.map(l => l.q_m3s);
+  const qMax = Math.max(...qVals), qMin = Math.min(...qVals);
+  lignes.forEach((l, i) => {
+    const y = MT + i * rowH;
+    const barH = rowH * 0.6;
+    const color = l.q_m3s === qMax ? "#c08000" : l.q_m3s === qMin ? "#2060a0" : "#0a6045";
+    ctx.fillStyle = color;
+    ctx.fillRect(ML, y + (rowH - barH) / 2, px(l.q_m3s) - ML, barH);
+    ctx.fillStyle = "#1a1a1a"; ctx.font = "10px Arial"; ctx.textAlign = "right";
+    const label = l.id === 'gradex' ? 'GRADEX' : l.methode;
+    const labelTronque = label.length > 30 ? label.slice(0, 28) + '…' : label;
+    ctx.fillText(labelTronque, ML - 8, y + rowH / 2 + 3);
+    ctx.fillStyle = "#444"; ctx.font = "bold 10px Arial"; ctx.textAlign = "left";
+    ctx.fillText(`${l.q_m3s.toFixed(2)} m³/s`, px(l.q_m3s) + 6, y + rowH / 2 + 3);
+  });
+
+  ctx.strokeStyle = "#aaa"; ctx.lineWidth = 1; ctx.strokeRect(ML, MT, IW, IH);
+  ctx.fillStyle = "#444"; ctx.font = "11px Arial"; ctx.textAlign = "center";
+  ctx.fillText("Qp (m³/s)", ML + IW / 2, MT + IH + 30);
+}
+
+function makeComparisonCanvas(lignes, station) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 800; canvas.height = Math.max(220, 60 + lignes.length * 34);
+  drawComparisonOnCanvas(canvas, lignes, station);
+  return canvas;
+}
+
 function makeGumbelCanvas(res, station) {
   const canvas = document.createElement("canvas");
   canvas.width = 800; canvas.height = 420;
@@ -363,13 +417,13 @@ function makeDischargeCanvas(res, station, cp) {
 
 // ─── Rapport Word avec graphiques embarqués ───────────────────
 function buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot,
-                                 mcResultats, onDone }) {
+                                 mcResultats, lignesComparatif, carteImage, onDone }) {
   if (!res) return;
 
   const fmtT = T => T >= 10000 ? "10 000" : T >= 1000 ? "1 000" : String(T);
   const today = new Date().toLocaleDateString("fr-FR");
 
-  function buildHTML(imgG64, imgD64) {
+  function buildHTML(imgG64, imgD64, imgC64) {
     const rowsHtml = res.extrap.map((e, i) => {
       const big = e.T >= 1000;
       const bg = big ? "#FFF3CD" : (i % 2 === 0 ? "#ffffff" : "#E8F5EE");
@@ -398,14 +452,34 @@ function buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot,
     const img1 = imgG64 ? `<img src="${imgG64}" width="620" height="300" style="border:1px solid #ccc"/>` : "";
     const img2 = imgD64 ? `<img src="${imgD64}" width="620" height="300" style="border:1px solid #ccc"/>` : "";
 
+    // Sections 1-4 (Présentation/Paramètres/Gumbel/Extrapolation) sont fixes ;
+    // 5+ dépendent de ce qui est réellement disponible (numérotation dynamique
+    // pour rester correcte quel que soit le sous-ensemble de sections présentes).
+    let nSection = 4;
     const mcReussis = (mcResultats || []).filter(r => !r.erreur);
     const mcSection = mcReussis.length ? `
-<h2>4. Méthodes complémentaires (Guide technique d'assainissement routier — BV-Calc)</h2>
+<h2>${++nSection}. Méthodes complémentaires (Guide technique d'assainissement routier — BV-Calc)</h2>
 <p>Méthodes calculées en complément de GRADEX (utile en particulier pour les petits bassins, S &lt; 100 km²) :</p>
 <table>
   <tr><th>Méthode</th><th>Qp (m³/s)</th><th>T (ans)</th></tr>
   ${mcReussis.map((r,i) => `<tr><td style="background:${i%2===0?"#fff":"#f5f5f5"}">${r.methode}</td><td style="text-align:center;font-weight:bold;background:${i%2===0?"#fff":"#f5f5f5"}">${r.q_m3s.toFixed(3)}</td><td style="text-align:center;background:${i%2===0?"#fff":"#f5f5f5"}">${r.T}</td></tr>`).join("")}
 </table>` : "";
+
+    const lignesComp = lignesComparatif || [];
+    const img3 = imgC64 ? `<img src="${imgC64}" width="620" height="${Math.max(160, 40 + lignesComp.length * 26)}" style="border:1px solid #ccc"/>` : "";
+    const comparatifSection = lignesComp.length > 1 ? `
+<h2>${++nSection}. Tableau comparatif des débits de pointe</h2>
+<table>
+  <tr><th>Méthode</th><th>Qp (m³/s)</th><th>T (ans)</th></tr>
+  ${lignesComp.map((l,i) => `<tr><td style="background:${i%2===0?"#fff":"#f5f5f5"}">${l.id==='gradex'?'GRADEX (Guillot & Duband, 1967)':l.methode}</td><td style="text-align:center;font-weight:bold;background:${i%2===0?"#fff":"#f5f5f5"}">${l.q_m3s.toFixed(3)}</td><td style="text-align:center;background:${i%2===0?"#fff":"#f5f5f5"}">${l.T}</td></tr>`).join("")}
+</table>
+${img3 ? `<h3>Graphique — Comparaison des débits de pointe</h3><p>${img3}</p>` : ""}` : "";
+
+    const carteSection = carteImage ? `
+<h2>${++nSection}. Cartes</h2>
+<p>Carte de délimitation du bassin versant (contour, réseau hydrographique et exutoire) :</p>
+<p><img src="${carteImage}" width="620" style="border:1px solid #ccc"/></p>` : "";
+    const nConclusions = ++nSection;
 
     return `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -461,19 +535,22 @@ ${img1 ? `<h3>Graphique — Ajustement Gumbel</h3><p>${img1}</p>` : ""}
   ${rowsHtml}
 </table>
 ${img2 ? `<h3>Graphique — Débits de crue</h3><p>${img2}</p>` : ""}
-<h2>5. Conclusions</h2>
+${mcSection}
+${comparatifSection}
+${carteSection}
+<h2>${nConclusions}. Conclusions</h2>
 <p>L'analyse des <b>${res.n}</b> précipitations de la station <b>${station}</b>
  (µ = ${f2(res.mean)} mm, σ = ${f2(res.std)} mm) donne un GRADEX de <b>${f3(res.a)} mm</b>.
  ${res.useMontana ? `Correction Montana : TC = ${tc} h, b = ${bMontana}.` : ""}
  Ancré à Q(T₀ = ${tPivot} ans) = <b>${f2(res.Q0)} m³/s</b> :</p>
 <ul>${res.extrap.map(e => `<li>Qp(T = ${fmtT(e.T)} ans) = <b>${e.Qp.toFixed(1)} m³/s</b></li>`).join("")}</ul>
-${mcSection}
+${lignesComp.length > 1 ? `<p>Le tableau comparatif situe le débit GRADEX par rapport aux méthodes complémentaires calculées, à la période de retour T=${lignesComp[0].T} ans.</p>` : ""}
 <div class="footer">Méthode GRADEX (Guillot &amp; Duband, 1967)${mcReussis.length ? " + Guide technique d'assainissement routier 2020" : ""} — ${new Date().toLocaleString("fr-FR")}</div>
 </body></html>`;
   }
 
-  function doDownload(imgG64, imgD64) {
-    const html = buildHTML(imgG64, imgD64);
+  function doDownload(imgG64, imgD64, imgC64) {
+    const html = buildHTML(imgG64, imgD64, imgC64);
     const blob = new Blob(["﻿", html], { type: "application/vnd.ms-word;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -489,9 +566,12 @@ ${mcSection}
   try {
     const cG = makeGumbelCanvas(res, station);
     const cD = makeDischargeCanvas(res, station, cp);
-    doDownload(cG.toDataURL("image/png"), cD.toDataURL("image/png"));
+    const imgC64 = (lignesComparatif || []).length > 1
+      ? makeComparisonCanvas(lignesComparatif, station).toDataURL("image/png")
+      : null;
+    doDownload(cG.toDataURL("image/png"), cD.toDataURL("image/png"), imgC64);
   } catch(e) {
-    doDownload(null, null);
+    doDownload(null, null, null);
   }
 }
 
@@ -629,6 +709,8 @@ function MainApp() {
   const [tcSel,     setTcSel]     = useState(null);
   const [showTC,    setShowTC]    = useState(false);
 
+  const [showGumbelTable, setShowGumbelTable] = useState(false);
+
   const [showNasa,  setShowNasa]  = useState(false);
   const [nasaLat,   setNasaLat]   = useState("");
   const [nasaLon,   setNasaLon]   = useState("");
@@ -648,6 +730,7 @@ function MainApp() {
   // dans le même fichier .hyd que le reste du projet (voir getState/loadState).
   const [mc, setMc] = useState(MC_ETAT_INITIAL);
   const [mcResultats, setMcResultats] = useState([]);
+  const [carteImage, setCarteImage] = useState(null); // dataURL PNG — dernière image de délimitation exportée (pour le rapport, point 14 "Cartes")
 
   const gumbelRef    = useRef(null);
   const dischargeRef = useRef(null);
@@ -766,14 +849,28 @@ function MainApp() {
     });
   }, [pjData, surface, cp, tPivot, qPivot, tcH, bMont]);
 
+  // Comparaison des débits de pointe entre GRADEX (au T sélectionné côté
+  // Méthodes complémentaires) et toutes les méthodes BV-Calc réussies —
+  // réutilisée par l'onglet Résultats (tableau) et l'onglet Graphiques
+  // (histogramme comparatif, point 11 de la demande).
+  const lignesComparatif = useMemo(() => {
+    if (!res) return [];
+    const T_COMPARAISON = parseFloat(mc.T) || 100;
+    const eGradex = res.extrap.find(e => e.T === T_COMPARAISON);
+    const METHODES_AVEC_TC = new Set(['rationnelle', 'tr55']);
+    return [
+      ...(eGradex ? [{ id:'gradex', methode:'GRADEX', q_m3s:eGradex.Qp, T:eGradex.T, tc: tc || null }] : []),
+      ...mcResultats.filter(r=>!r.erreur).map(r => ({ ...r, tc: METHODES_AVEC_TC.has(r.id) ? mc.tc_h : null })),
+    ];
+  }, [res, mc.T, mc.tc_h, mcResultats, tc]);
+
   const fmtT = T => T>=10000?"10 000":T>=1000?"1 000":String(T);
 
   const TABS = [
     { id:"donnees",    icon:"database",   label:t('tabDonnees')    },
-    { id:"tableau",    icon:"table",      label:t('tabTableau')    },
-    { id:"gradex",     icon:"wave-sine",  label:t('tabGradex')     },
-    { id:"graphiques", icon:"chart-line", label:t('tabGraphiques') },
     { id:"methodes",   icon:"stack-2",    label:t('tabMethodes')   },
+    { id:"resultats",  icon:"list-check", label:t('tabResultats')  },
+    { id:"graphiques", icon:"chart-line", label:t('tabGraphiques') },
     { id:"rapport",    icon:"file-text",  label:t('tabRapport')    },
   ];
 
@@ -862,7 +959,7 @@ function MainApp() {
         <TBtn icon="file-type-doc" label={t('tbWord')}       onClick={()=>{
           if (!res) return;
           setWordLoad(true);
-          buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats,
+          buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage,
             onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
         }} disabled={!res||wordLoad} title="Exporter rapport Word avec graphiques" />
         <TSep />
@@ -1143,8 +1240,8 @@ function MainApp() {
           </div>
         )}
 
-        {/* ═══ ONGLET TABLEAU GUMBEL ════════════════════════════════ */}
-        {tab === "tableau" && (
+        {/* ═══ ONGLET RÉSULTATS (Gradex + Méthodes complémentaires) ═══ */}
+        {tab === "resultats" && (
           !res ? <NoData title={t('gxDonneesInsuffisantes')} hint={t('gxDonneesInsuffisantesHint')} /> : (
             <>
               {surfWarn && <SurfWarn t={t} />}
@@ -1161,41 +1258,9 @@ function MainApp() {
                 ))}
               </div>
               {res.useMontana && <MontBanner res={res} tc={tc} bMontana={bMontana} t={t} />}
-              <Panel title={`${t('gxTableauAjustement')} ${station} (n=${res.n})`} icon="table" noPad>
-                <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                  <thead>
-                    <tr>
-                      {[t('gxRang'),t('gxAnnee'),t('gxPjmax24h'),t('gxFreqHazen'),
-                        t('gxVarReduite'),t('gxPjmaxEstimee')].map(h =>
-                        <th key={h} style={TH}>{h}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {res.rowsFull.map((r,i) => (
-                      <tr key={i} style={{ background:i%2===0?"#fff":C_STRIP }}>
-                        <td style={TD}>{r.rank}</td>
-                        <td style={{ ...TD, textAlign:"left", paddingLeft:10 }}>{r.year}</td>
-                        <td style={{ ...TD, fontWeight:600, color:C_BLUE }}>{r.pj.toFixed(1)}</td>
-                        <td style={TD}>{r.F.toFixed(6)}</td>
-                        <td style={TD}>{r.u.toFixed(6)}</td>
-                        <td style={{ ...TD, color:C_TEAL }}>{r.pEst.toFixed(3)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Panel>
-            </>
-          )
-        )}
 
-        {/* ═══ ONGLET GRADEX ════════════════════════════════════════ */}
-        {tab === "gradex" && (
-          !res ? <NoData title={t('gxDonneesInsuffisantes')} hint={t('gxDonneesInsuffisantesHint')} /> : (
-            <>
-              {surfWarn && <SurfWarn t={t} />}
-              {res.useMontana && <MontBanner res={res} tc={tc} bMontana={bMontana} t={t} />}
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
-                <Panel title={t('gxParamGradex')} icon="math-symbols">
+              <Panel title={t('resGradexTitre')} icon="wave-sine" accent={C_TEAL}>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
                     <tbody>
                       {[["GRADEX a = σ√6/π",f6(res.a)+" mm"],[t('gxParamB'),f6(res.b)+" mm"],
@@ -1212,8 +1277,6 @@ function MainApp() {
                       ))}
                     </tbody>
                   </table>
-                </Panel>
-                <Panel title={t('gxFormulesAppliquees')} icon="math">
                   <div style={{ fontFamily:"'Courier New',monospace", fontSize:11, lineHeight:2.2,
                     background:"#f5f8ff", border:`1px solid ${C_BORDER}`, padding:"10px 12px" }}>
                     <div><b>u(T)</b> = −ln(−ln(1−1/T))</div>
@@ -1224,9 +1287,7 @@ function MainApp() {
                       ? `(TC/24)^(1−b) × 1000×S/(TC×3600)`
                       : `1000 × S / 86400`}</div>
                   </div>
-                </Panel>
-              </div>
-              <Panel title={`${t('gxDebitsExtrapoles')} ${station}`} icon="wave-sine" accent={C_TEAL} noPad>
+                </div>
                 <table style={{ width:"100%", borderCollapse:"collapse" }}>
                   <thead>
                     <tr>
@@ -1252,7 +1313,83 @@ function MainApp() {
                     })}
                   </tbody>
                 </table>
+                <div style={{ marginTop:10 }}>
+                  <CollapseSection title={`${t('gxTableauAjustement')} ${station} (n=${res.n})`}
+                    icon="table" open={showGumbelTable} onToggle={()=>setShowGumbelTable(v=>!v)}>
+                    <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                      <thead>
+                        <tr>
+                          {[t('gxRang'),t('gxAnnee'),t('gxPjmax24h'),t('gxFreqHazen'),
+                            t('gxVarReduite'),t('gxPjmaxEstimee')].map(h =>
+                            <th key={h} style={TH}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {res.rowsFull.map((r,i) => (
+                          <tr key={i} style={{ background:i%2===0?"#fff":C_STRIP }}>
+                            <td style={TD}>{r.rank}</td>
+                            <td style={{ ...TD, textAlign:"left", paddingLeft:10 }}>{r.year}</td>
+                            <td style={{ ...TD, fontWeight:600, color:C_BLUE }}>{r.pj.toFixed(1)}</td>
+                            <td style={TD}>{r.F.toFixed(6)}</td>
+                            <td style={TD}>{r.u.toFixed(6)}</td>
+                            <td style={{ ...TD, color:C_TEAL }}>{r.pEst.toFixed(3)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </CollapseSection>
+                </div>
               </Panel>
+
+              {mcResultats.filter(r=>!r.erreur).length > 0 && (
+                <Panel title={t('resMethodesTitre')} icon="stack-2" accent={C_BLUE} noPad>
+                  <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                    <thead>
+                      <tr>
+                        {[t('p3ColMethode'),t('p3ColQp'),t('p3ColT')].map(h =>
+                          <th key={h} style={TH}>{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mcResultats.filter(r=>!r.erreur).map((r,i) => (
+                        <tr key={r.id} style={{ background:i%2===0?"#fff":C_STRIP }}>
+                          <td style={{ ...TD, textAlign:"left", paddingLeft:8 }}>{r.methode}</td>
+                          <td style={{ ...TD, fontWeight:700, color:C_TEAL }}>{r.q_m3s.toFixed(3)}</td>
+                          <td style={TD}>{r.T}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Panel>
+              )}
+
+              {lignesComparatif.length > 0 && (() => {
+                const vals = lignesComparatif.map(l => l.q_m3s);
+                const qMin = Math.min(...vals), qMax = Math.max(...vals);
+                return (
+                  <Panel title={t('resComparatifTitre')} icon="chart-bar" accent={C_AMBER} noPad>
+                    <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                      <thead>
+                        <tr>
+                          {[t('resColMethode'),t('resColQp'),t('resColT'),t('resColTc')].map(h =>
+                            <th key={h} style={{ ...TH, background:"#f0dfc0", color:"#7a4a00" }}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lignesComparatif.map((l,i) => (
+                          <tr key={l.id} style={{ background: l.q_m3s===qMax?"#fff0c0":l.q_m3s===qMin?"#e0f0ff":(i%2===0?"#fff":C_STRIP) }}>
+                            <td style={{ ...TD, textAlign:"left", paddingLeft:8, fontWeight:l.id==='gradex'?700:400 }}>{l.id==='gradex' ? 'GRADEX (Guillot & Duband, 1967)' : l.methode}</td>
+                            <td style={{ ...TD, fontWeight:700, color:C_AMBER }}>{l.q_m3s.toFixed(3)}</td>
+                            <td style={TD}>{l.T}</td>
+                            <td style={TD}>{l.tc ? `${l.tc} h` : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div style={{ fontSize:10, color:"#888", padding:"6px 10px" }}>{t('resComparatifHint')}</div>
+                  </Panel>
+                );
+              })()}
             </>
           )
         )}
@@ -1314,6 +1451,32 @@ function MainApp() {
                   </ResponsiveContainer>
                 </div>
               </ChartBox>
+
+              {lignesComparatif.length > 1 && (
+                <ChartBox
+                  title={t('resComparatifTitre')}
+                  subtitle={`T = ${lignesComparatif[0]?.T ?? mc.T ?? 100} ans`}
+                  copyLabel={t('gxCopierImage')} downloadLabel={t('gxTelechargerPng')}
+                  onCopy={()=>copyChartCanvas(makeComparisonCanvas(lignesComparatif, station), showToast)}
+                  onDownload={()=>downloadChartCanvas(makeComparisonCanvas(lignesComparatif, station), `Comparaison_${station}.png`, showToast)}>
+                  <ResponsiveContainer width="100%" height={Math.max(180, 50 + lignesComparatif.length * 40)}>
+                    <BarChart data={lignesComparatif.map(l => ({ ...l, nom: l.id==='gradex' ? 'GRADEX' : l.methode }))}
+                      layout="vertical" margin={{ top:10, right:60, bottom:10, left:10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                      <XAxis type="number" label={{ value:"Qp (m³/s)", position:"insideBottom", offset:-5, fontSize:12 }} tick={{ fontSize:11 }} />
+                      <YAxis type="category" dataKey="nom" width={190} tick={{ fontSize:11 }} />
+                      <Tooltip formatter={v=>[`${v.toFixed(2)} m³/s`, 'Qp']} />
+                      <Bar dataKey="q_m3s" radius={[0,3,3,0]}>
+                        {lignesComparatif.map((l,i) => {
+                          const vals = lignesComparatif.map(x=>x.q_m3s);
+                          const c = l.q_m3s===Math.max(...vals) ? C_AMBER : l.q_m3s===Math.min(...vals) ? C_BLUE : C_TEAL;
+                          return <Cell key={i} fill={c} />;
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartBox>
+              )}
             </div>
           )
         )}
@@ -1321,7 +1484,7 @@ function MainApp() {
         {/* ═══ ONGLET MÉTHODES COMPLÉMENTAIRES (BV-Calc) ═══════════ */}
         {tab === "methodes" && (
           <MethodesTab v={mc} setV={setMc} showToast={showToast} onImportToGradex={handleImportToGradex}
-            onResultatsChange={setMcResultats} />
+            onResultatsChange={setMcResultats} surfaceGradex={surface} nomProjet={station} onCarteImage={setCarteImage} />
         )}
 
         {/* ═══ ONGLET RAPPORT ══════════════════════════════════════ */}
@@ -1338,7 +1501,7 @@ function MainApp() {
                 <button onClick={()=>{
                   if(!res) return;
                   setWordLoad(true);
-                  buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats,
+                  buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage,
                     onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
                 }} disabled={wordLoad||!res}
                   style={{ padding:"5px 16px", background:wordLoad?"#aaa":C_TEAL, color:"#fff",
@@ -1438,6 +1601,28 @@ function MainApp() {
                             <td style={{ ...TD, textAlign:"left", paddingLeft:8 }}>{r.methode}</td>
                             <td style={{ ...TD, fontWeight:700, color:C_TEAL }}>{r.q_m3s.toFixed(3)}</td>
                             <td style={TD}>{r.T}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </RS>
+                )}
+
+                {lignesComparatif.length > 1 && (
+                  <RS n="5" title={t('resComparatifTitre')}>
+                    <table style={{ width:"70%", borderCollapse:"collapse", fontSize:12 }}>
+                      <thead>
+                        <tr style={{ background:"#f0dfc0" }}>
+                          {[t('resColMethode'),t('resColQp'),t('resColT')].map(h =>
+                            <th key={h} style={{ ...TH, background:"#f0dfc0", color:"#7a4a00" }}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lignesComparatif.map((l,i) => (
+                          <tr key={l.id} style={{ background:i%2===0?"#fff":C_STRIP }}>
+                            <td style={{ ...TD, textAlign:"left", paddingLeft:8 }}>{l.id==='gradex'?'GRADEX (Guillot & Duband, 1967)':l.methode}</td>
+                            <td style={{ ...TD, fontWeight:700, color:C_AMBER }}>{l.q_m3s.toFixed(3)}</td>
+                            <td style={TD}>{l.T}</td>
                           </tr>
                         ))}
                       </tbody>

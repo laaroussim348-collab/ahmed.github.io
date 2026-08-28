@@ -54,9 +54,14 @@ export const META = {
 export function calculer({ surface_km2, h24_mm, pente_m_par_m, K, conventionUnites = 'excel' }) {
   valider({ surface_km2, pente_m_par_m });
   if (!(h24_mm > 0)) throw new Error('La hauteur de pluie de 24h (H) doit être strictement positive.');
-  if (![0.11, 0.22, 0.32, 0.43].includes(K)) {
+  // K provient d'un <select> HTML (donc toujours une chaîne, ex. "0.43") : on le
+  // normalise en nombre AVANT de le comparer aux 4 valeurs du guide — comparer
+  // directement la chaîne à ce tableau de nombres échouait toujours (=== strict).
+  const kNum = Number(K);
+  if (![0.11, 0.22, 0.32, 0.43].includes(kNum)) {
     throw new Error('K doit être l\'une des 4 valeurs proposées par le guide : 0.11, 0.22, 0.32 ou 0.43.');
   }
+  K = kNum;
 
   const etapes = [];
   let q_m3s;
@@ -100,6 +105,9 @@ export function calculer({ surface_km2, h24_mm, pente_m_par_m, K, conventionUnit
       `K = ${K} retenu par l'utilisateur parmi les 4 classes topographiques du guide.`,
       'H doit être estimée de préférence via la relation de Weiss (P24h = 1.15×Pjmax) plutôt que par extrapolation des paramètres de Montana (cf. avertissement guide p.7).',
       `Convention d'unités utilisée : ${conventionUnites === 'guide' ? 'littérale du guide (A km², P m/m)' : 'A ha, P ‰ — défaut, confirmé par 2 exemples de calcul réels'}.`,
+      ...(surface_km2 > 1
+        ? [`⚠️ Surface = ${surface_km2} km² > 1 km² : le guide (p.7) indique que cette formule est « couramment utilisée pour des surfaces inférieures à 1 km² » — résultat à interpréter avec prudence au-delà.`]
+        : []),
     ],
     source: META.source,
   };

@@ -16,7 +16,7 @@
 //  (mghydro.com) et estimation pluviométrique (NASA POWER),
 //  Curve Number et coefficient de ruissellement Cr.
 // ============================================================
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   METHODES, getMethode, watershed, concentrationTime, rainfall, runoff, units,
 } from '../calculations/index.js';
@@ -35,6 +35,22 @@ function fmt(v, d = 3) {
 }
 const estRempli = v => v !== undefined && v !== null && v !== '' && !Number.isNaN(v);
 
+// Libellés lisibles des champs de DEPENDANCES (clés d'état v.xxx), affichés à
+// l'utilisateur quand une méthode est indisponible faute de données — plutôt
+// que le nom technique brut ("h1h_mm", "malletGautier_K"...).
+const LABELS_CHAMPS = {
+  surface_km2: 'Surface (A)', h24_mm: 'Pluie 24h (H24h)', h1h_mm: 'Pluie 1h (H1h)',
+  pente_m_par_m: 'Pente moyenne (P)', cr: 'Coefficient de ruissellement (Cr)', CN: 'Curve Number (CN)',
+  tc_h: 'Temps de concentration (tc)', T: 'Période de retour (T)', a: 'Coefficient de Montana (a)', b: 'Coefficient de Montana (b)',
+  macMath_K: 'Coefficient topographique K (Mac-Math)',
+  malletGautier_K: 'Coefficient K (Mallet-Gautier)', malletGautier_a: 'Coefficient a (Mallet-Gautier)',
+  fullerII_a: 'Coefficient a (Fuller II)', fullerII_N: 'Coefficient N (Fuller II)',
+  hazanLazarevich_a: 'Coefficient a (Hazan-Lazarevich)',
+  pma_mm_an: 'Pluie moyenne annuelle (Pma)', longueur_km: 'Longueur du thalweg (L)',
+  fr_surfaceRef: 'Surface de la station de référence (S_ref)', fr_qRef: 'Débit de référence (Q_ref)',
+};
+function libelleChamp(cle) { return LABELS_CHAMPS[cle] || cle; }
+
 const DEPENDANCES = {
   rationnelle: ['surface_km2', 'cr', 'a', 'b', 'tc_h', 'T'],
   macMath: ['surface_km2', 'h24_mm', 'pente_m_par_m', 'macMath_K'],
@@ -43,11 +59,13 @@ const DEPENDANCES = {
   malletGautier: ['malletGautier_K', 'malletGautier_a', 'pma_mm_an', 'surface_km2', 'T', 'longueur_km'],
   fullerII: ['fullerII_a', 'T', 'surface_km2', 'fullerII_N'],
   hazanLazarevich: ['pma_mm_an', 'surface_km2', 'hazanLazarevich_a', 'T'],
+  francouRodier: ['surface_km2', 'fr_surfaceRef', 'fr_qRef', 'T'],
 };
 const ADAPTATEURS = {
   rationnelle: v => ({ surface_km2: v.surface_km2, cr: v.cr, a: v.a, b: v.b, tc_h: v.tc_h, T: v.T }),
   macMath: v => ({ surface_km2: v.surface_km2, h24_mm: v.h24_mm, pente_m_par_m: v.pente_m_par_m, K: v.macMath_K, conventionUnites: v.macMath_convention || 'excel' }),
   burkliZiegler: v => ({ surface_km2: v.surface_km2, h1h_mm: v.h1h_mm, pente_m_par_m: v.pente_m_par_m, cr: v.cr }),
+  francouRodier: v => ({ surface_km2: v.surface_km2, surface_ref_km2: v.fr_surfaceRef, q_ref_m3s: v.fr_qRef, T: v.T }),
   tr55: v => ({ surface_km2: v.surface_km2, CN: v.CN, p24_mm: v.h24_mm, tc_h: v.tc_h }),
   malletGautier: v => ({ K: v.malletGautier_K, a: v.malletGautier_a, pma_m_an: v.pma_mm_an != null ? v.pma_mm_an / 1000 : undefined, surface_km2: v.surface_km2, T: v.T, longueur_km: v.longueur_km }),
   fullerII: v => ({ a: v.fullerII_a, T: v.T, surface_km2: v.surface_km2, N: v.fullerII_N }),
@@ -59,6 +77,7 @@ export const MC_ETAT_INITIAL = {
   T: 100, a: '', b: '', h1h_mm: '', cr: '', CN: '',
   macMath_K: '', macMath_convention: 'excel', pma_mm_an: '',
   malletGautier_K: 2, malletGautier_a: 20, fullerII_a: 2, fullerII_N: '', hazanLazarevich_a: 1,
+  fr_surfaceRef: '', fr_qRef: '',
   tc_h: '', h24_mm: '', pjmax_saisie: '', weiss_k: 1.15, montana_b_suppose: 0.55,
   tcFormuleId: 'kirpich', tcPenteSource: 'globale',
   crCode: '1', crGroupe: 'moyens', crPente: '<=5%',
@@ -69,9 +88,19 @@ export const MC_ETAT_INITIAL = {
   geoLat: '', geoLon: '',
 };
 
-export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange }) {
+export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange, surfaceGradex, nomProjet, onCarteImage }) {
   const { t } = useI18n();
   const patch = useCallback(p => setV(prev => ({ ...prev, ...p })), [setV]);
+
+  // Sens inverse de importerVersGradex() : si l'utilisateur a déjà saisi la
+  // surface dans l'onglet GRADEX (Données) AVANT d'ouvrir Méthodes
+  // complémentaires, on la reprend automatiquement — pas de ressaisie.
+  // Ne s'applique que tant que v.surface_km2 est vide (jamais d'écrasement
+  // d'une valeur déjà saisie/calculée ici, ex. par la délimitation auto).
+  useEffect(() => {
+    if (surfaceGradex && !v.surface_km2) patch({ surface_km2: surfaceGradex });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surfaceGradex]);
 
   const [showGeo, setShowGeo] = useState(false);
   const [showHypso, setShowHypso] = useState(false);
@@ -251,6 +280,11 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
         (data.longueur_km ? `${t('fixThalwegApprox')} ${fmt(data.longueur_km, 2)} ${t('fixKm')}` : '') + '.';
       avertissements.push(...(data.avertissements || []));
       ok = true; okDelineation = true;
+      // Synchronise automatiquement la surface avec l'onglet GRADEX (Données) —
+      // la surface extraite par la délimitation ne doit pas être ressaisie
+      // manuellement. On utilise data.surface_km2 directement (pas v.surface_km2,
+      // qui n'est pas encore à jour : patch() ci-dessus est asynchrone).
+      onImportToGradex?.({ surface: data.surface_km2 });
     } catch (e) { html += `❌ ${t('erreur')} ${e.message}`; }
 
     try {
@@ -360,7 +394,7 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
           {t('mcGeoImporterVersGradex')}
         </button>
 
-        <DelimitationCarte lat={v.geoLat} lon={v.geoLon} geometrie={geoGeometrie} loading={geoLoading} onConfirmer={calculerGeo} />
+        <DelimitationCarte lat={v.geoLat} lon={v.geoLon} geometrie={geoGeometrie} loading={geoLoading} onConfirmer={calculerGeo} nomProjet={nomProjet} onImageExportee={onCarteImage} />
       </CollapseSection>
 
       {/* ── Bassin versant ── */}
@@ -598,6 +632,14 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
           <Field label={t('pma')} unite="mm/an" value={v.pma_mm_an} onChange={x=>patch({pma_mm_an:x})} type="number" />
         </CollapseSection>
 
+        <CollapseSection title={t('frTitre')} icon="function" open accent={C_BLUE} onToggle={()=>{}}>
+          <p style={{ fontSize:10.5, color:'#888', marginBottom:6 }}>{t('frHint')}</p>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <Field label={t('frSurfaceRef')} unite="km²" value={v.fr_surfaceRef} onChange={x=>patch({fr_surfaceRef:x})} type="number" />
+            <Field label={t('frQRef')} unite="m³/s" value={v.fr_qRef} onChange={x=>patch({fr_qRef:x})} type="number" />
+          </div>
+        </CollapseSection>
+
         <CollapseSection title={t('mgTitre')} icon="function" open accent={C_BLUE} onToggle={()=>{}}>
           <p style={{ fontSize:10.5, color:'#888', marginBottom:6 }}>{t('mgHint')}</p>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
@@ -636,7 +678,7 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
                   {meta.recommandee && <span style={{ fontSize:9, background:'#d1fae5', color:'#065f46', padding:'1px 6px', borderRadius:8 }}>{t('tcRecommandee')}</span>}
                   {meta.nonDocumenteeDansLeGuide && <span style={{ fontSize:9, background:'#fef3c7', color:'#92400e', padding:'1px 6px', borderRadius:8 }}>{t('methodeNonDocumentee')}</span>}
                 </div>
-                {!disponible && <div style={{ fontSize:9.5, color:'#a05000' }}>{t('donneesManquantes')} : {manquants.join(', ')}</div>}
+                {!disponible && <div style={{ fontSize:9.5, color:'#a05000' }}>{t('donneesManquantes')} : {manquants.map(libelleChamp).join(', ')}</div>}
               </label>
             );
           })}

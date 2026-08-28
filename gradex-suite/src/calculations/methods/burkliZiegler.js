@@ -56,7 +56,12 @@ export function calculer({ surface_km2, h1h_mm, pente_m_par_m, cr }) {
     etapes,
     parametresEntree: { surface_km2, h1h_mm, pente_m_par_m, cr },
     resultatsIntermediaires: { surface_ha, pente_pour_mille },
-    hypotheses: ['H1h peut être estimée par Montana : H1h = a×(1h)^-b = a (car 1^-b = 1).'],
+    hypotheses: [
+      'H1h peut être estimée par Montana : H1h = a×(1h)^-b = a (car 1^-b = 1).',
+      ...(surface_km2 > 20
+        ? [`⚠️ Surface = ${surface_km2} km² > 20 km² : le guide (p.8) indique que cette formule est « couramment utilisée au Maroc » pour des surfaces inférieures à 20 km² (certains auteurs l'étendent jusqu'à 200 km²) — résultat à interpréter avec prudence au-delà.`]
+        : []),
+    ],
     source: META.source,
   };
 }
