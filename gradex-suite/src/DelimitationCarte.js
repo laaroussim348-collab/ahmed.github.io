@@ -31,6 +31,46 @@ const FONDS = {
   },
 };
 
+// Occupation du sol — ESA WorldCover 2021 (10 m, couverture mondiale, y
+// compris le Maroc), servi en WMS par Terrascope (VITO). Surcouche de
+// RÉFÉRENCE VISUELLE uniquement — aide l'utilisateur à choisir manuellement
+// le code Cr/CN (table du guide), AUCUN calcul automatique n'en est déduit
+// (nécessiterait une extraction de statistiques zonales non disponible ici).
+const OCCUPATION_SOL_WMS = {
+  url: 'https://services.terrascope.be/wms/v2',
+  layer: 'WORLDCOVER_2021_MAP',
+  attribution: '&copy; ESA WorldCover 2021 (VITO/Terrascope)',
+};
+
+// Légende officielle ESA WorldCover (11 classes, code/couleur standard).
+const LEGENDE_OCCUPATION_SOL = [
+  { code: 10, couleur: '#006400', label: 'Forêt' },
+  { code: 20, couleur: '#ffbb22', label: 'Arbustes' },
+  { code: 30, couleur: '#ffff4c', label: 'Prairie / herbacé' },
+  { code: 40, couleur: '#f096ff', label: 'Terres cultivées' },
+  { code: 50, couleur: '#fa0000', label: 'Zone bâtie' },
+  { code: 60, couleur: '#b4b4b4', label: 'Sol nu / végétation clairsemée' },
+  { code: 70, couleur: '#f0f0f0', label: 'Neige / glace' },
+  { code: 80, couleur: '#0064c8', label: "Plans d'eau permanents" },
+  { code: 90, couleur: '#0096a0', label: 'Zone humide herbacée' },
+  { code: 95, couleur: '#00cf75', label: 'Mangrove' },
+  { code: 100, couleur: '#fae6a0', label: 'Mousse / lichen' },
+];
+
+function ajouterSurcoucheOccupationSol(map) {
+  const couche = L.tileLayer.wms(OCCUPATION_SOL_WMS.url, {
+    layers: OCCUPATION_SOL_WMS.layer,
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    attribution: OCCUPATION_SOL_WMS.attribution,
+    crossOrigin: true,
+    opacity: 0.65,
+  });
+  couche._estSurcouche = true; // pour que basculerFond() ne la retire pas en changeant de fond satellite/plan
+  return couche.addTo(map);
+}
+
 function iconePoint(couleur, taille = 16) {
   return L.divIcon({
     className: '',
@@ -255,12 +295,15 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
   const fullDivRef = useRef(null);
   const fullMapObjRef = useRef(null);
   const fullGroupeRef = useRef(null);
+  const occupationSolRef = useRef(null);
 
   const [plein, setPlein] = useState(false);
   const [candidat, setCandidat] = useState(null); // {lat, lon} choisi par clic, en attente de confirmation
   const [fondActif, setFondActif] = useState('satellite');
   const [exportMsg, setExportMsg] = useState(null);
   const [confirmErreur, setConfirmErreur] = useState(null);
+  const [occupationSolActive, setOccupationSolActive] = useState(false);
+  const [occupationSolErreur, setOccupationSolErreur] = useState(null);
 
   const point = lat !== '' && lon !== '' && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lon))
     ? [parseFloat(lat), parseFloat(lon)] : null;
@@ -303,7 +346,10 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     map.on('click', (e) => setCandidat({ lat: e.latlng.lat, lon: e.latlng.lng }));
 
     setTimeout(() => map.invalidateSize(), 50);
-    return () => { map.remove(); fullMapObjRef.current = null; fullGroupeRef.current = null; };
+    return () => {
+      map.remove(); fullMapObjRef.current = null; fullGroupeRef.current = null;
+      occupationSolRef.current = null; setOccupationSolActive(false); setOccupationSolErreur(null);
+    };
   }, [plein]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Redessine le marqueur candidat sans reconstruire toute la carte
@@ -319,9 +365,27 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     const map = fullMapObjRef.current;
     if (!map) return;
     const suivant = fondActif === 'satellite' ? 'plan' : 'satellite';
-    map.eachLayer((l) => { if (l instanceof L.TileLayer) map.removeLayer(l); });
+    // Ne retire que le fond (satellite/plan), pas la surcouche occupation du sol (voir _estSurcouche).
+    map.eachLayer((l) => { if (l instanceof L.TileLayer && !l._estSurcouche) map.removeLayer(l); });
     ajouterFond(map, suivant);
     setFondActif(suivant);
+  }
+
+  function basculerOccupationSol() {
+    const map = fullMapObjRef.current;
+    if (!map) return;
+    if (occupationSolRef.current) {
+      map.removeLayer(occupationSolRef.current);
+      occupationSolRef.current = null;
+      setOccupationSolActive(false);
+      setOccupationSolErreur(null);
+      return;
+    }
+    setOccupationSolErreur(null);
+    const couche = ajouterSurcoucheOccupationSol(map);
+    couche.on('tileerror', () => setOccupationSolErreur(t('carteOccupationSolErreur')));
+    occupationSolRef.current = couche;
+    setOccupationSolActive(true);
   }
 
   const confirmer = useCallback(async () => {
@@ -381,13 +445,43 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
               {candidat && <div style={{ marginTop: 4 }}>{t('carteExutoireChoisi')} <b>{candidat.lat.toFixed(5)}, {candidat.lon.toFixed(5)}</b></div>}
               {confirmErreur && <div style={{ marginTop: 4, color: C_RED }}>⚠️ {confirmErreur}</div>}
             </div>
-            <div style={{ display: 'flex', gap: 6, pointerEvents: 'auto' }}>
-              <button onClick={basculerFond} style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>
-                {fondActif === 'satellite' ? t('cartePlanBtn') : t('carteSatelliteBtn')}
-              </button>
-              <button onClick={() => setPlein(false)} style={{ padding: '6px 12px', fontSize: 14, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>✕</button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, pointerEvents: 'auto' }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={basculerFond} style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>
+                  {fondActif === 'satellite' ? t('cartePlanBtn') : t('carteSatelliteBtn')}
+                </button>
+                <button onClick={basculerOccupationSol}
+                  title={t('carteOccupationSolHint')}
+                  style={{ padding: '6px 10px', fontSize: 12, borderRadius: 3, cursor: 'pointer',
+                    background: occupationSolActive ? C_TEAL : '#fff', color: occupationSolActive ? '#fff' : '#1a1a1a',
+                    border: `1px solid ${occupationSolActive ? C_TEAL : C_BORDER}` }}>
+                  🌍 {t('carteOccupationSolBtn')}
+                </button>
+                <button onClick={() => setPlein(false)} style={{ padding: '6px 12px', fontSize: 14, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>✕</button>
+              </div>
+              {occupationSolErreur && (
+                <div style={{ background: 'rgba(255,255,255,.95)', border: `1px solid ${C_RED}`, borderRadius: 3,
+                  padding: '5px 10px', fontSize: 11, color: C_RED, maxWidth: 260 }}>
+                  ⚠️ {occupationSolErreur}
+                </div>
+              )}
             </div>
           </div>
+
+          {occupationSolActive && (
+            <div style={{ position: 'absolute', bottom: 16, right: 10, zIndex: 500,
+              background: 'rgba(255,255,255,.95)', border: `1px solid ${C_BORDER}`, borderRadius: 3,
+              padding: '8px 10px', fontSize: 10.5, maxWidth: 190, pointerEvents: 'auto' }}>
+              <div style={{ fontWeight: 700, marginBottom: 4, color: '#1a1a1a' }}>{t('carteOccupationSolLegende')}</div>
+              {LEGENDE_OCCUPATION_SOL.map(({ code, couleur, label }) => (
+                <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ width: 12, height: 12, background: couleur, border: '1px solid #0003', flexShrink: 0 }} />
+                  <span style={{ color: '#333' }}>{label}</span>
+                </div>
+              ))}
+              <div style={{ marginTop: 4, color: '#888', fontSize: 9.5 }}>{OCCUPATION_SOL_WMS.attribution.replace('&copy;', '©')}</div>
+            </div>
+          )}
 
           <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 500,
             display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>

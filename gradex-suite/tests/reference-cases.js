@@ -93,10 +93,23 @@ export const CAS_REFERENCE = [
     attendu: { tc_min: 154.53113401624339 },
     cellule: "'CARACT DE BV'!H20",
   },
-  // NB : Passini et Turrazza ne sont PAS comparés à l'Excel ici : le classeur
-  // contient une incohérence d'unités documentée dans le README (point
-  // ambigu n°5). Ce module implémente la formule du GUIDE, volontairement
-  // différente des cellules H21/H22 du classeur pour ces 2 formules.
+  // Passini et Turrazza : vérifiées contre les exemples numériques du document
+  // utilisateur « Calcul de temps de concentration » (formules et coefficients
+  // corrigés suite à cette source — voir concentrationTime.js).
+  {
+    categorie: 'tc',
+    methode: 'passini',
+    entrees: { surface_km2: 4.55, longueur_km: 18.08, pente_pourcent: 0.5 },
+    attendu: { tc_min: 397.9741599 },
+    cellule: "Document utilisateur « Calcul de temps de concentration »",
+  },
+  {
+    categorie: 'tc',
+    methode: 'turrazza',
+    entrees: { surface_km2: 1.3, longueur_km: 1.94, pente_m_par_m: 0.047 },
+    attendu: { tc_min: 40.68563553 },
+    cellule: "Document utilisateur « Calcul de temps de concentration »",
+  },
 
   {
     categorie: 'rainfall_intensite',

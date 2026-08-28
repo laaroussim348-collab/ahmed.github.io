@@ -31,9 +31,9 @@ export const TD = {
 };
 
 // ─── Bouton barre d'outils ────────────────────────────────────
-export function TBtn({ icon, label, onClick, disabled, title }) {
+export function TBtn({ icon, label, onClick, disabled, title, onMouseDown }) {
   return (
-    <button onClick={onClick} disabled={disabled} title={title || label}
+    <button onClick={onClick} onMouseDown={onMouseDown} disabled={disabled} title={title || label}
       style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1,
         padding:'4px 10px', background:'transparent', border:'none',
         cursor:disabled?'not-allowed':'pointer', borderRadius:2, opacity:disabled?0.4:1,
@@ -117,9 +117,9 @@ export function Panel({ title, icon, children, headerRight, accent, noPad }) {
   );
 }
 
-export function MItem({ icon, label, shortcut, onClick }) {
+export function MItem({ icon, label, shortcut, onClick, onMouseDown }) {
   return (
-    <div onClick={onClick}
+    <div onClick={onClick} onMouseDown={onMouseDown}
       style={{ padding:'5px 14px', fontSize:12, cursor:'pointer',
         display:'flex', justifyContent:'space-between', alignItems:'center' }}
       onMouseEnter={e=>e.currentTarget.style.background='#dce8f8'}
@@ -215,6 +215,68 @@ export function downloadChartCanvas(canvas, filename, onDone) {
     setTimeout(()=>URL.revokeObjectURL(url),1000);
     if(onDone) onDone('PNG téléchargé.');
   }, 'image/png');
+}
+
+// ─── Copier / Couper / Coller génériques sur le champ actif ───────────────
+// Remplace `document.execCommand('copy'/'cut')`, qui ne fait RIEN de fiable
+// quand il est déclenché par un clic sur un bouton de barre d'outils (la
+// sélection navigateur est perdue dès que le focus quitte le champ). On lit/
+// écrit directement l'élément actuellement focalisé (input/textarea), ce qui
+// fonctionne pour N'IMPORTE QUEL champ de l'appli, pas seulement le collage
+// de données Pjmax (comportement précédent, limité à l'onglet "Données").
+function champActif() {
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && !el.disabled && !el.readOnly) return el;
+  return null;
+}
+
+// Modifie la valeur d'un <input>/<textarea> contrôlé par React en passant
+// par le setter natif puis en émettant un évènement 'input' — nécessaire
+// car assigner directement `el.value` est ignoré par React (state contrôlé).
+function fixerValeurNative(el, valeur) {
+  const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+  if (setter) setter.call(el, valeur); else el.value = valeur;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+export async function copierChampActif(onDone) {
+  const el = champActif();
+  if (!el) { onDone?.('Cliquez dans un champ, puis Copier.'); return; }
+  const [debut, fin] = [el.selectionStart ?? 0, el.selectionEnd ?? el.value.length];
+  const texte = debut !== fin ? el.value.slice(debut, fin) : el.value;
+  if (!texte) { onDone?.('Rien à copier.'); return; }
+  try { await navigator.clipboard.writeText(texte); onDone?.('Copié.'); }
+  catch { onDone?.('Copie impossible (presse-papiers refusé par le navigateur).'); }
+}
+
+export async function couperChampActif(onDone) {
+  const el = champActif();
+  if (!el) { onDone?.('Cliquez dans un champ, puis Couper.'); return; }
+  const [debut, fin] = [el.selectionStart ?? 0, el.selectionEnd ?? el.value.length];
+  const aSelection = debut !== fin;
+  const texte = aSelection ? el.value.slice(debut, fin) : el.value;
+  if (!texte) { onDone?.('Rien à couper.'); return; }
+  try {
+    await navigator.clipboard.writeText(texte);
+    fixerValeurNative(el, aSelection ? el.value.slice(0, debut) + el.value.slice(fin) : '');
+    if (aSelection) { el.selectionStart = el.selectionEnd = debut; }
+    onDone?.('Coupé.');
+  } catch { onDone?.('Coupe impossible (presse-papiers refusé par le navigateur).'); }
+}
+
+export async function collerChampActif(onDone) {
+  const el = champActif();
+  if (!el) { onDone?.('Cliquez dans un champ avant de coller.'); return; }
+  try {
+    const texte = await navigator.clipboard.readText();
+    if (!texte) { onDone?.('Presse-papiers vide.'); return; }
+    const [debut, fin] = [el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length];
+    fixerValeurNative(el, el.value.slice(0, debut) + texte + el.value.slice(fin));
+    const position = debut + texte.length;
+    el.selectionStart = el.selectionEnd = position;
+    onDone?.('Collé.');
+  } catch { onDone?.('Collage impossible (presse-papiers refusé par le navigateur).'); }
 }
 
 export function esc(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
