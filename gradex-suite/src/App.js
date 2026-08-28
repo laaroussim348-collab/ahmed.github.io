@@ -1321,7 +1321,7 @@ function MainApp() {
         {/* ═══ ONGLET MÉTHODES COMPLÉMENTAIRES (BV-Calc) ═══════════ */}
         {tab === "methodes" && (
           <MethodesTab v={mc} setV={setMc} showToast={showToast} onImportToGradex={handleImportToGradex}
-            onResultatsChange={setMcResultats} />
+            onResultatsChange={setMcResultats} surfaceGradex={surface} />
         )}
 
         {/* ═══ ONGLET RAPPORT ══════════════════════════════════════ */}

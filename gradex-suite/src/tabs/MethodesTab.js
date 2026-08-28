@@ -16,7 +16,7 @@
 //  (mghydro.com) et estimation pluviométrique (NASA POWER),
 //  Curve Number et coefficient de ruissellement Cr.
 // ============================================================
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   METHODES, getMethode, watershed, concentrationTime, rainfall, runoff, units,
 } from '../calculations/index.js';
@@ -88,9 +88,19 @@ export const MC_ETAT_INITIAL = {
   geoLat: '', geoLon: '',
 };
 
-export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange }) {
+export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange, surfaceGradex }) {
   const { t } = useI18n();
   const patch = useCallback(p => setV(prev => ({ ...prev, ...p })), [setV]);
+
+  // Sens inverse de importerVersGradex() : si l'utilisateur a déjà saisi la
+  // surface dans l'onglet GRADEX (Données) AVANT d'ouvrir Méthodes
+  // complémentaires, on la reprend automatiquement — pas de ressaisie.
+  // Ne s'applique que tant que v.surface_km2 est vide (jamais d'écrasement
+  // d'une valeur déjà saisie/calculée ici, ex. par la délimitation auto).
+  useEffect(() => {
+    if (surfaceGradex && !v.surface_km2) patch({ surface_km2: surfaceGradex });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surfaceGradex]);
 
   const [showGeo, setShowGeo] = useState(false);
   const [showHypso, setShowHypso] = useState(false);
@@ -270,6 +280,11 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
         (data.longueur_km ? `${t('fixThalwegApprox')} ${fmt(data.longueur_km, 2)} ${t('fixKm')}` : '') + '.';
       avertissements.push(...(data.avertissements || []));
       ok = true; okDelineation = true;
+      // Synchronise automatiquement la surface avec l'onglet GRADEX (Données) —
+      // la surface extraite par la délimitation ne doit pas être ressaisie
+      // manuellement. On utilise data.surface_km2 directement (pas v.surface_km2,
+      // qui n'est pas encore à jour : patch() ci-dessus est asynchrone).
+      onImportToGradex?.({ surface: data.surface_km2 });
     } catch (e) { html += `❌ ${t('erreur')} ${e.message}`; }
 
     try {
