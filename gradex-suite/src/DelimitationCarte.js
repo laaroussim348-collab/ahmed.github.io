@@ -31,46 +31,6 @@ const FONDS = {
   },
 };
 
-// Occupation du sol — ESA WorldCover 2021 (10 m, couverture mondiale, y
-// compris le Maroc), servi en WMS par Terrascope (VITO). Surcouche de
-// RÉFÉRENCE VISUELLE uniquement — aide l'utilisateur à choisir manuellement
-// le code Cr/CN (table du guide), AUCUN calcul automatique n'en est déduit
-// (nécessiterait une extraction de statistiques zonales non disponible ici).
-const OCCUPATION_SOL_WMS = {
-  url: 'https://services.terrascope.be/wms/v2',
-  layer: 'WORLDCOVER_2021_MAP',
-  attribution: '&copy; ESA WorldCover 2021 (VITO/Terrascope)',
-};
-
-// Légende officielle ESA WorldCover (11 classes, code/couleur standard).
-const LEGENDE_OCCUPATION_SOL = [
-  { code: 10, couleur: '#006400', label: 'Forêt' },
-  { code: 20, couleur: '#ffbb22', label: 'Arbustes' },
-  { code: 30, couleur: '#ffff4c', label: 'Prairie / herbacé' },
-  { code: 40, couleur: '#f096ff', label: 'Terres cultivées' },
-  { code: 50, couleur: '#fa0000', label: 'Zone bâtie' },
-  { code: 60, couleur: '#b4b4b4', label: 'Sol nu / végétation clairsemée' },
-  { code: 70, couleur: '#f0f0f0', label: 'Neige / glace' },
-  { code: 80, couleur: '#0064c8', label: "Plans d'eau permanents" },
-  { code: 90, couleur: '#0096a0', label: 'Zone humide herbacée' },
-  { code: 95, couleur: '#00cf75', label: 'Mangrove' },
-  { code: 100, couleur: '#fae6a0', label: 'Mousse / lichen' },
-];
-
-function ajouterSurcoucheOccupationSol(map) {
-  const couche = L.tileLayer.wms(OCCUPATION_SOL_WMS.url, {
-    layers: OCCUPATION_SOL_WMS.layer,
-    format: 'image/png',
-    transparent: true,
-    version: '1.3.0',
-    attribution: OCCUPATION_SOL_WMS.attribution,
-    crossOrigin: true,
-    opacity: 0.65,
-  });
-  couche._estSurcouche = true; // pour que basculerFond() ne la retire pas en changeant de fond satellite/plan
-  return couche.addTo(map);
-}
-
 function iconePoint(couleur, taille = 16) {
   return L.divIcon({
     className: '',
@@ -80,12 +40,16 @@ function iconePoint(couleur, taille = 16) {
   });
 }
 
+// maxZoom 19 (au lieu de 18) : gain de détail au dézoom max sur les deux fonds
+// (Esri World Imagery et CARTO Voyager servent tous deux jusqu'à ce niveau) —
+// demande utilisateur "je peux zoomer plus".
+const ZOOM_MAX = 19;
 function ajouterFond(map, id) {
   return L.tileLayer(FONDS[id].url, {
     attribution: FONDS[id].attribution,
     subdomains: FONDS[id].subdomains || 'abc',
     crossOrigin: true,
-    maxZoom: 18,
+    maxZoom: ZOOM_MAX,
   }).addTo(map);
 }
 
@@ -93,6 +57,11 @@ function creerCarte(container, { interactive }) {
   const map = L.map(container, {
     center: [31.792, -7.083], // centre approx. du Maroc, par défaut
     zoom: interactive ? 6 : 5,
+    // minZoom bas : permet de dézoomer suffisamment pour délimiter/visualiser
+    // aussi de grands bassins versants (demande utilisateur "accepter les
+    // grands BV"), pas seulement les petits bassins routiers habituels.
+    minZoom: interactive ? 2 : 3,
+    maxZoom: ZOOM_MAX,
     zoomControl: false,
     dragging: interactive,
     scrollWheelZoom: interactive,
@@ -143,6 +112,87 @@ const PALIERS_ECHELLE_M = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 2
 function palierEchelle(m) {
   const eligibles = PALIERS_ECHELLE_M.filter((p) => p <= m);
   return eligibles.length ? eligibles[eligibles.length - 1] : PALIERS_ECHELLE_M[0];
+}
+
+// ── Grille de coordonnées (graticule) ──────────────────────────
+// Pas "rond" (degrés), même logique que palierEchelle mais visant ~5
+// lignes sur l'étendue visible (fonctionne aussi bien à l'échelle d'un
+// petit bassin versant qu'à celle d'un grand, cf. demande utilisateur).
+const PALIERS_GRILLE_DEG = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];
+function pasGrille(etendueDeg) {
+  const cible = etendueDeg / 5;
+  const eligibles = PALIERS_GRILLE_DEG.filter((p) => p <= cible);
+  return eligibles.length ? eligibles[eligibles.length - 1] : PALIERS_GRILLE_DEG[0];
+}
+function formatDegGrille(v, pas) {
+  const dec = pas < 0.01 ? 3 : pas < 1 ? 2 : 0;
+  return `${v.toFixed(dec)}°`;
+}
+function lignesGrille(bounds) {
+  const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+  const pasLat = pasGrille(ne.lat - sw.lat) || PALIERS_GRILLE_DEG[0];
+  const pasLon = pasGrille(ne.lng - sw.lng) || PALIERS_GRILLE_DEG[0];
+  const lats = [];
+  for (let l = Math.ceil(sw.lat / pasLat) * pasLat; l <= ne.lat + 1e-9; l += pasLat) lats.push(Math.round(l / pasLat) * pasLat);
+  const lons = [];
+  for (let l = Math.ceil(sw.lng / pasLon) * pasLon; l <= ne.lng + 1e-9; l += pasLon) lons.push(Math.round(l / pasLon) * pasLon);
+  return { lats, lons, pasLat, pasLon };
+}
+
+/** Grille interactive (carte plein écran) : lignes + étiquettes de degrés, recalculées à chaque déplacement/zoom. */
+function dessinerGrille(map, groupeRef) {
+  if (groupeRef.current) { groupeRef.current.remove(); groupeRef.current = null; }
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+  const { lats, lons, pasLat, pasLon } = lignesGrille(bounds);
+  const groupe = L.layerGroup();
+  const styleLigne = { color: '#ffffff', weight: 1, opacity: 0.55, dashArray: '3,5', interactive: false };
+  const styleLabel = 'background:rgba(0,0,0,.55);color:#fff;font-size:9.5px;line-height:14px;padding:0 4px;border-radius:2px;white-space:nowrap;font-family:Arial,sans-serif;';
+  const icone = (texte, ancre) => L.divIcon({ className: '', html: `<span style="${styleLabel}">${texte}</span>`, iconSize: [0, 14], iconAnchor: ancre });
+  lats.forEach((la) => {
+    groupe.addLayer(L.polyline([[la, sw.lng], [la, ne.lng]], styleLigne));
+    groupe.addLayer(L.marker([la, sw.lng], { icon: icone(formatDegGrille(la, pasLat), [-2, 7]), interactive: false }));
+  });
+  lons.forEach((lo) => {
+    groupe.addLayer(L.polyline([[sw.lat, lo], [ne.lat, lo]], styleLigne));
+    groupe.addLayer(L.marker([sw.lat, lo], { icon: icone(formatDegGrille(lo, pasLon), [-8, 14]), interactive: false }));
+  });
+  groupe.addTo(map);
+  groupeRef.current = groupe;
+}
+
+/** Même grille, dessinée directement sur le canevas d'export (image PNG téléchargée / rapport). */
+function dessinerGrilleCanvas(ctx, map, rect) {
+  const bounds = map.getBounds();
+  const { lats, lons, pasLat, pasLon } = lignesGrille(bounds);
+  const ouest = bounds.getWest(), est = bounds.getEast(), sud = bounds.getSouth(), nord = bounds.getNorth();
+  ctx.save();
+  ctx.font = '10px Arial';
+  lats.forEach((la) => {
+    const p1 = map.latLngToContainerPoint([la, ouest]);
+    const p2 = map.latLngToContainerPoint([la, est]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.moveTo(0, p1.y); ctx.lineTo(rect.width, p2.y); ctx.stroke();
+    ctx.setLineDash([]);
+    const texte = formatDegGrille(la, pasLat);
+    const w = ctx.measureText(texte).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(2, p1.y - 7, w + 6, 14);
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(texte, 5, p1.y);
+  });
+  lons.forEach((lo) => {
+    const p1 = map.latLngToContainerPoint([sud, lo]);
+    const p2 = map.latLngToContainerPoint([nord, lo]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.moveTo(p1.x, rect.height); ctx.lineTo(p2.x, 0); ctx.stroke();
+    ctx.setLineDash([]);
+    const texte = formatDegGrille(lo, pasLon);
+    const w = ctx.measureText(texte).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(p1.x - w / 2 - 3, rect.height - 16, w + 6, 14);
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(texte, p1.x, rect.height - 9);
+  });
+  ctx.restore();
 }
 
 /**
@@ -246,13 +296,19 @@ function dessinerCartouche(ctx, map, rect, { titre, exutoire, aContour }) {
  * canevas est "taché" et toDataURL() lève une exception, interceptée
  * plus bas avec un message explicite.
  */
-function exporterCarteEnImage(map, container, { contour, coursEau, exutoire, titre }) {
+function exporterCarteEnImage(map, container, { contour, coursEau, exutoire, titre, grille }) {
   const rect = container.getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
+  // Résolution d'export : au moins 2x (indépendamment du devicePixelRatio de
+  // l'écran), pour une image nette à l'impression/dans le rapport Word — pas
+  // seulement à l'affichage écran (demande utilisateur "augmenter la
+  // résolution de qualité de mise en page").
+  const ratio = Math.max(window.devicePixelRatio || 1, 2);
   const canvas = document.createElement('canvas');
   canvas.width = rect.width * ratio;
   canvas.height = rect.height * ratio;
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.scale(ratio, ratio);
 
   const tuiles = container.querySelectorAll('.leaflet-tile-pane img.leaflet-tile-loaded');
@@ -282,6 +338,7 @@ function exporterCarteEnImage(map, container, { contour, coursEau, exutoire, tit
     ctx.fillStyle = '#d32f2f'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
   }
 
+  if (grille) dessinerGrilleCanvas(ctx, map, rect);
   dessinerCartouche(ctx, map, rect, { titre, exutoire, aContour: contour?.length > 2 });
   return canvas;
 }
@@ -295,15 +352,14 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
   const fullDivRef = useRef(null);
   const fullMapObjRef = useRef(null);
   const fullGroupeRef = useRef(null);
-  const occupationSolRef = useRef(null);
+  const grilleGroupeRef = useRef(null);
 
   const [plein, setPlein] = useState(false);
   const [candidat, setCandidat] = useState(null); // {lat, lon} choisi par clic, en attente de confirmation
   const [fondActif, setFondActif] = useState('satellite');
   const [exportMsg, setExportMsg] = useState(null);
   const [confirmErreur, setConfirmErreur] = useState(null);
-  const [occupationSolActive, setOccupationSolActive] = useState(false);
-  const [occupationSolErreur, setOccupationSolErreur] = useState(null);
+  const [grilleActive, setGrilleActive] = useState(true);
 
   const point = lat !== '' && lon !== '' && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lon))
     ? [parseFloat(lat), parseFloat(lon)] : null;
@@ -348,9 +404,26 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     setTimeout(() => map.invalidateSize(), 50);
     return () => {
       map.remove(); fullMapObjRef.current = null; fullGroupeRef.current = null;
-      occupationSolRef.current = null; setOccupationSolActive(false); setOccupationSolErreur(null);
     };
   }, [plein]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Grille de coordonnées (carte plein écran uniquement) : recalculée à
+  // chaque déplacement/zoom, activable/désactivable sans reconstruire la carte.
+  useEffect(() => {
+    const map = fullMapObjRef.current;
+    if (!map || !plein) return undefined;
+    if (!grilleActive) {
+      if (grilleGroupeRef.current) { grilleGroupeRef.current.remove(); grilleGroupeRef.current = null; }
+      return undefined;
+    }
+    const redessiner = () => dessinerGrille(map, grilleGroupeRef);
+    redessiner();
+    map.on('moveend zoomend', redessiner);
+    return () => {
+      map.off('moveend zoomend', redessiner);
+      if (grilleGroupeRef.current) { grilleGroupeRef.current.remove(); grilleGroupeRef.current = null; }
+    };
+  }, [plein, grilleActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Redessine le marqueur candidat sans reconstruire toute la carte
   useEffect(() => {
@@ -365,27 +438,9 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     const map = fullMapObjRef.current;
     if (!map) return;
     const suivant = fondActif === 'satellite' ? 'plan' : 'satellite';
-    // Ne retire que le fond (satellite/plan), pas la surcouche occupation du sol (voir _estSurcouche).
-    map.eachLayer((l) => { if (l instanceof L.TileLayer && !l._estSurcouche) map.removeLayer(l); });
+    map.eachLayer((l) => { if (l instanceof L.TileLayer) map.removeLayer(l); });
     ajouterFond(map, suivant);
     setFondActif(suivant);
-  }
-
-  function basculerOccupationSol() {
-    const map = fullMapObjRef.current;
-    if (!map) return;
-    if (occupationSolRef.current) {
-      map.removeLayer(occupationSolRef.current);
-      occupationSolRef.current = null;
-      setOccupationSolActive(false);
-      setOccupationSolErreur(null);
-      return;
-    }
-    setOccupationSolErreur(null);
-    const couche = ajouterSurcoucheOccupationSol(map);
-    couche.on('tileerror', () => setOccupationSolErreur(t('carteOccupationSolErreur')));
-    occupationSolRef.current = couche;
-    setOccupationSolActive(true);
   }
 
   const confirmer = useCallback(async () => {
@@ -408,7 +463,7 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     const div = fullDivRef.current;
     if (!map || !div) return;
     try {
-      const canvas = exporterCarteEnImage(map, div, { contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point, titre: titreCarte });
+      const canvas = exporterCarteEnImage(map, div, { contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point, titre: titreCarte, grille: grilleActive });
       downloadChartCanvas(canvas, `delimitation-bassin-versant${nomProjet ? '-'+nomProjet.replace(/\s+/g,'_') : ''}.png`, (msg) => setExportMsg(msg));
       // Conserve aussi l'image pour le rapport Word (section "Cartes", point 14) —
       // sans action supplémentaire de l'utilisateur au-delà de ce téléchargement.
@@ -450,38 +505,17 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
                 <button onClick={basculerFond} style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>
                   {fondActif === 'satellite' ? t('cartePlanBtn') : t('carteSatelliteBtn')}
                 </button>
-                <button onClick={basculerOccupationSol}
-                  title={t('carteOccupationSolHint')}
+                <button onClick={() => setGrilleActive(g => !g)}
+                  title={t('carteGrilleHint')}
                   style={{ padding: '6px 10px', fontSize: 12, borderRadius: 3, cursor: 'pointer',
-                    background: occupationSolActive ? C_TEAL : '#fff', color: occupationSolActive ? '#fff' : '#1a1a1a',
-                    border: `1px solid ${occupationSolActive ? C_TEAL : C_BORDER}` }}>
-                  🌍 {t('carteOccupationSolBtn')}
+                    background: grilleActive ? C_TEAL : '#fff', color: grilleActive ? '#fff' : '#1a1a1a',
+                    border: `1px solid ${grilleActive ? C_TEAL : C_BORDER}` }}>
+                  # {t('carteGrilleBtn')}
                 </button>
                 <button onClick={() => setPlein(false)} style={{ padding: '6px 12px', fontSize: 14, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>✕</button>
               </div>
-              {occupationSolErreur && (
-                <div style={{ background: 'rgba(255,255,255,.95)', border: `1px solid ${C_RED}`, borderRadius: 3,
-                  padding: '5px 10px', fontSize: 11, color: C_RED, maxWidth: 260 }}>
-                  ⚠️ {occupationSolErreur}
-                </div>
-              )}
             </div>
           </div>
-
-          {occupationSolActive && (
-            <div style={{ position: 'absolute', bottom: 16, right: 10, zIndex: 500,
-              background: 'rgba(255,255,255,.95)', border: `1px solid ${C_BORDER}`, borderRadius: 3,
-              padding: '8px 10px', fontSize: 10.5, maxWidth: 190, pointerEvents: 'auto' }}>
-              <div style={{ fontWeight: 700, marginBottom: 4, color: '#1a1a1a' }}>{t('carteOccupationSolLegende')}</div>
-              {LEGENDE_OCCUPATION_SOL.map(({ code, couleur, label }) => (
-                <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span style={{ width: 12, height: 12, background: couleur, border: '1px solid #0003', flexShrink: 0 }} />
-                  <span style={{ color: '#333' }}>{label}</span>
-                </div>
-              ))}
-              <div style={{ marginTop: 4, color: '#888', fontSize: 9.5 }}>{OCCUPATION_SOL_WMS.attribution.replace('&copy;', '©')}</div>
-            </div>
-          )}
 
           <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 500,
             display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>

@@ -839,11 +839,28 @@ function MainApp() {
     setTcResults(res); setTcSel(null);
   }
 
-  // Reporter Surface/TC depuis l'onglet "Méthodes complémentaires" vers GRADEX.
-  const handleImportToGradex = useCallback(({ surface: s, tc: tcVal }) => {
+  // Reporter Surface/TC depuis "Méthodes complémentaires" vers GRADEX, et —
+  // quand la délimitation fournit des coordonnées — lancer automatiquement
+  // le téléchargement de la série Pjmax (Open-Meteo ERA5) pour ce même
+  // point, sans que l'utilisateur ait à cliquer séparément sur "Importer
+  // depuis Open-Meteo ERA5". Ne remplace jamais une série déjà présente
+  // (ressaisie/collée manuellement, ou déjà importée) — mêmes garde-fous
+  // que la synchronisation automatique de la surface.
+  const handleImportToGradex = useCallback(({ surface: s, tc: tcVal, lat, lon }) => {
     if (s) setSurface(String(s));
     if (tcVal) setTc(String(tcVal));
-  }, []);
+    if (lat != null && lon != null && !pasteText.trim()) {
+      setNasaLat(String(lat)); setNasaLon(String(lon));
+      setNasaLoad(true); setNasaErr(false); setNasaMsg('');
+      fetchPrecipData(lat, lon, m => setNasaMsg(m))
+        .then(data => {
+          setPasteText(data.map(d => `${d.y}\t${d.v}`).join('\n'));
+          setNasaMsg(`✓ ${data.length} ${t('gxAnneesImportees')} (${t('gxAutoDepuisDelimitation')})`);
+        })
+        .catch(e => { setNasaErr(true); setNasaMsg(`${t('erreur')} ${e.message}`); })
+        .finally(() => setNasaLoad(false));
+    }
+  }, [pasteText, t]);
 
   const pjData   = useMemo(() => parsePaste(pasteText), [pasteText]);
   const tcH      = parseFloat(tc) || 0;
@@ -862,20 +879,19 @@ function MainApp() {
     });
   }, [pjData, surface, cp, tPivot, qPivot, tcH, bMont]);
 
-  // Comparaison des débits de pointe entre GRADEX (au T sélectionné côté
-  // Méthodes complémentaires) et toutes les méthodes BV-Calc réussies —
+  // Comparaison des débits de pointe entre GRADEX et les méthodes BV-Calc —
   // réutilisée par l'onglet Résultats (tableau) et l'onglet Graphiques
-  // (histogramme comparatif, point 11 de la demande).
+  // (histogramme comparatif, point 11 de la demande). GRADEX est désormais
+  // une méthode comme les autres (case à cocher dans "Sélection des
+  // méthodes", voir MethodesTab.js) : sa ligne provient de mcResultats,
+  // au même titre que Mac-Math, Rationnelle, etc. — plus d'injection
+  // séparée/inconditionnelle ici.
   const lignesComparatif = useMemo(() => {
-    if (!res) return [];
-    const T_COMPARAISON = parseFloat(mc.T) || 100;
-    const eGradex = res.extrap.find(e => e.T === T_COMPARAISON);
     const METHODES_AVEC_TC = new Set(['rationnelle', 'tr55']);
-    return [
-      ...(eGradex ? [{ id:'gradex', methode:'GRADEX', q_m3s:eGradex.Qp, T:eGradex.T, tc: tc || null }] : []),
-      ...mcResultats.filter(r=>!r.erreur).map(r => ({ ...r, tc: METHODES_AVEC_TC.has(r.id) ? mc.tc_h : null })),
-    ];
-  }, [res, mc.T, mc.tc_h, mcResultats, tc]);
+    return mcResultats.filter(r=>!r.erreur).map(r => ({
+      ...r, tc: r.id === 'gradex' ? (tc || null) : (METHODES_AVEC_TC.has(r.id) ? mc.tc_h : null),
+    }));
+  }, [mc.tc_h, mcResultats, tc]);
 
   // Numérotation dynamique des sections de l'onglet Rapport (aperçu à l'écran)
   // — même logique que buildAndDownloadWord, pour que les deux restent cohérents
@@ -894,9 +910,12 @@ function MainApp() {
 
   const fmtT = T => T>=10000?"10 000":T>=1000?"1 000":String(T);
 
+  // Onglets "Données" et "Méthodes complémentaires" fusionnés en un seul
+  // (id "donnees") — GRADEX (paramètres BV + Pjmax) et BV-Calc (délimitation,
+  // méthodes de débit de pointe) sur la même page, plus besoin de naviguer
+  // entre deux onglets pour un seul et même projet.
   const TABS = [
     { id:"donnees",    icon:"database",   label:t('tabDonnees')    },
-    { id:"methodes",   icon:"stack-2",    label:t('tabMethodes')   },
     { id:"resultats",  icon:"list-check", label:t('tabResultats')  },
     { id:"graphiques", icon:"chart-line", label:t('tabGraphiques') },
     { id:"rapport",    icon:"file-text",  label:t('tabRapport')    },
@@ -1507,10 +1526,15 @@ function MainApp() {
           )
         )}
 
-        {/* ═══ ONGLET MÉTHODES COMPLÉMENTAIRES (BV-Calc) ═══════════ */}
-        {tab === "methodes" && (
-          <MethodesTab v={mc} setV={setMc} showToast={showToast} onImportToGradex={handleImportToGradex}
-            onResultatsChange={setMcResultats} surfaceGradex={surface} nomProjet={station} onCarteImage={setCarteImage} />
+        {/* ═══ MÉTHODES COMPLÉMENTAIRES (BV-Calc) — fusionné dans l'onglet
+             "Données & Méthodes" (juste après les paramètres/Pjmax GRADEX
+             ci-dessus), plus un onglet séparé. ═══════════ */}
+        {tab === "donnees" && (
+          <div style={{ marginTop:18, paddingTop:14, borderTop:`2px solid ${C_BORDER}` }}>
+            <MethodesTab v={mc} setV={setMc} showToast={showToast} onImportToGradex={handleImportToGradex}
+              onResultatsChange={setMcResultats} surfaceGradex={surface} nomProjet={station} onCarteImage={setCarteImage}
+              gradexDisponible={!!res} gradexResultat={res ? { T: parseFloat(mc.T)||100, q_m3s: res.extrap.find(e=>e.T===(parseFloat(mc.T)||100))?.Qp } : null} />
+          </div>
         )}
 
         {/* ═══ ONGLET RAPPORT ══════════════════════════════════════ */}
