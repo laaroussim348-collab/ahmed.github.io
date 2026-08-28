@@ -35,6 +35,21 @@ function fmt(v, d = 3) {
 }
 const estRempli = v => v !== undefined && v !== null && v !== '' && !Number.isNaN(v);
 
+// Libellés lisibles des champs de DEPENDANCES (clés d'état v.xxx), affichés à
+// l'utilisateur quand une méthode est indisponible faute de données — plutôt
+// que le nom technique brut ("h1h_mm", "malletGautier_K"...).
+const LABELS_CHAMPS = {
+  surface_km2: 'Surface (A)', h24_mm: 'Pluie 24h (H24h)', h1h_mm: 'Pluie 1h (H1h)',
+  pente_m_par_m: 'Pente moyenne (P)', cr: 'Coefficient de ruissellement (Cr)', CN: 'Curve Number (CN)',
+  tc_h: 'Temps de concentration (tc)', T: 'Période de retour (T)', a: 'Coefficient de Montana (a)', b: 'Coefficient de Montana (b)',
+  macMath_K: 'Coefficient topographique K (Mac-Math)',
+  malletGautier_K: 'Coefficient K (Mallet-Gautier)', malletGautier_a: 'Coefficient a (Mallet-Gautier)',
+  fullerII_a: 'Coefficient a (Fuller II)', fullerII_N: 'Coefficient N (Fuller II)',
+  hazanLazarevich_a: 'Coefficient a (Hazan-Lazarevich)',
+  pma_mm_an: 'Pluie moyenne annuelle (Pma)', longueur_km: 'Longueur du thalweg (L)',
+};
+function libelleChamp(cle) { return LABELS_CHAMPS[cle] || cle; }
+
 const DEPENDANCES = {
   rationnelle: ['surface_km2', 'cr', 'a', 'b', 'tc_h', 'T'],
   macMath: ['surface_km2', 'h24_mm', 'pente_m_par_m', 'macMath_K'],
@@ -636,7 +651,7 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
                   {meta.recommandee && <span style={{ fontSize:9, background:'#d1fae5', color:'#065f46', padding:'1px 6px', borderRadius:8 }}>{t('tcRecommandee')}</span>}
                   {meta.nonDocumenteeDansLeGuide && <span style={{ fontSize:9, background:'#fef3c7', color:'#92400e', padding:'1px 6px', borderRadius:8 }}>{t('methodeNonDocumentee')}</span>}
                 </div>
-                {!disponible && <div style={{ fontSize:9.5, color:'#a05000' }}>{t('donneesManquantes')} : {manquants.join(', ')}</div>}
+                {!disponible && <div style={{ fontSize:9.5, color:'#a05000' }}>{t('donneesManquantes')} : {manquants.map(libelleChamp).join(', ')}</div>}
               </label>
             );
           })}
