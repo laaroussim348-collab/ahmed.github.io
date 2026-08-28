@@ -417,7 +417,7 @@ function makeDischargeCanvas(res, station, cp) {
 
 // ─── Rapport Word avec graphiques embarqués ───────────────────
 function buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot,
-                                 mcResultats, lignesComparatif, onDone }) {
+                                 mcResultats, lignesComparatif, carteImage, onDone }) {
   if (!res) return;
 
   const fmtT = T => T >= 10000 ? "10 000" : T >= 1000 ? "1 000" : String(T);
@@ -474,6 +474,11 @@ function buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot,
   ${lignesComp.map((l,i) => `<tr><td style="background:${i%2===0?"#fff":"#f5f5f5"}">${l.id==='gradex'?'GRADEX (Guillot & Duband, 1967)':l.methode}</td><td style="text-align:center;font-weight:bold;background:${i%2===0?"#fff":"#f5f5f5"}">${l.q_m3s.toFixed(3)}</td><td style="text-align:center;background:${i%2===0?"#fff":"#f5f5f5"}">${l.T}</td></tr>`).join("")}
 </table>
 ${img3 ? `<h3>Graphique — Comparaison des débits de pointe</h3><p>${img3}</p>` : ""}` : "";
+
+    const carteSection = carteImage ? `
+<h2>${++nSection}. Cartes</h2>
+<p>Carte de délimitation du bassin versant (contour, réseau hydrographique et exutoire) :</p>
+<p><img src="${carteImage}" width="620" style="border:1px solid #ccc"/></p>` : "";
     const nConclusions = ++nSection;
 
     return `<!DOCTYPE html>
@@ -532,6 +537,7 @@ ${img1 ? `<h3>Graphique — Ajustement Gumbel</h3><p>${img1}</p>` : ""}
 ${img2 ? `<h3>Graphique — Débits de crue</h3><p>${img2}</p>` : ""}
 ${mcSection}
 ${comparatifSection}
+${carteSection}
 <h2>${nConclusions}. Conclusions</h2>
 <p>L'analyse des <b>${res.n}</b> précipitations de la station <b>${station}</b>
  (µ = ${f2(res.mean)} mm, σ = ${f2(res.std)} mm) donne un GRADEX de <b>${f3(res.a)} mm</b>.
@@ -724,6 +730,7 @@ function MainApp() {
   // dans le même fichier .hyd que le reste du projet (voir getState/loadState).
   const [mc, setMc] = useState(MC_ETAT_INITIAL);
   const [mcResultats, setMcResultats] = useState([]);
+  const [carteImage, setCarteImage] = useState(null); // dataURL PNG — dernière image de délimitation exportée (pour le rapport, point 14 "Cartes")
 
   const gumbelRef    = useRef(null);
   const dischargeRef = useRef(null);
@@ -952,7 +959,7 @@ function MainApp() {
         <TBtn icon="file-type-doc" label={t('tbWord')}       onClick={()=>{
           if (!res) return;
           setWordLoad(true);
-          buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif,
+          buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage,
             onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
         }} disabled={!res||wordLoad} title="Exporter rapport Word avec graphiques" />
         <TSep />
@@ -1477,7 +1484,7 @@ function MainApp() {
         {/* ═══ ONGLET MÉTHODES COMPLÉMENTAIRES (BV-Calc) ═══════════ */}
         {tab === "methodes" && (
           <MethodesTab v={mc} setV={setMc} showToast={showToast} onImportToGradex={handleImportToGradex}
-            onResultatsChange={setMcResultats} surfaceGradex={surface} nomProjet={station} />
+            onResultatsChange={setMcResultats} surfaceGradex={surface} nomProjet={station} onCarteImage={setCarteImage} />
         )}
 
         {/* ═══ ONGLET RAPPORT ══════════════════════════════════════ */}
@@ -1494,7 +1501,7 @@ function MainApp() {
                 <button onClick={()=>{
                   if(!res) return;
                   setWordLoad(true);
-                  buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats,
+                  buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage,
                     onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
                 }} disabled={wordLoad||!res}
                   style={{ padding:"5px 16px", background:wordLoad?"#aaa":C_TEAL, color:"#fff",

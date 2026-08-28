@@ -246,7 +246,7 @@ function exporterCarteEnImage(map, container, { contour, coursEau, exutoire, tit
   return canvas;
 }
 
-export default function DelimitationCarte({ lat, lon, geometrie, loading, onConfirmer, nomProjet }) {
+export default function DelimitationCarte({ lat, lon, geometrie, loading, onConfirmer, nomProjet, onImageExportee }) {
   const { t } = useI18n();
   const previewDivRef = useRef(null);
   const previewMapObjRef = useRef(null);
@@ -346,6 +346,9 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     try {
       const canvas = exporterCarteEnImage(map, div, { contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point, titre: titreCarte });
       downloadChartCanvas(canvas, `delimitation-bassin-versant${nomProjet ? '-'+nomProjet.replace(/\s+/g,'_') : ''}.png`, (msg) => setExportMsg(msg));
+      // Conserve aussi l'image pour le rapport Word (section "Cartes", point 14) —
+      // sans action supplémentaire de l'utilisateur au-delà de ce téléchargement.
+      onImageExportee?.(canvas.toDataURL('image/png'));
     } catch (e) {
       setExportMsg(t('carteExportErreur'));
     }
