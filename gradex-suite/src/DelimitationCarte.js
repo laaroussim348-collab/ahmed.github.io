@@ -98,6 +98,107 @@ function dessinerGeometrie(map, groupeRef, { contour, coursEau, exutoire, exutoi
   return bounds;
 }
 
+/** Palier "rond" (mètres) juste inférieur ou égal à la distance mesurée — même logique que L.control.scale. */
+const PALIERS_ECHELLE_M = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000];
+function palierEchelle(m) {
+  const eligibles = PALIERS_ECHELLE_M.filter((p) => p <= m);
+  return eligibles.length ? eligibles[eligibles.length - 1] : PALIERS_ECHELLE_M[0];
+}
+
+/**
+ * Cartouche professionnelle dessinée par-dessus la carte exportée : titre
+ * du projet, flèche du nord, échelle graphique, légende, coordonnées de
+ * l'exutoire (point 12 de la demande — carte "pas juste une image").
+ */
+function dessinerCartouche(ctx, map, rect, { titre, exutoire, aContour }) {
+  // ── Titre ──
+  ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const texteTitre = titre || 'Délimitation du bassin versant';
+  const largeurTitre = ctx.measureText(texteTitre).width;
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.fillRect(rect.width / 2 - largeurTitre / 2 - 10, 8, largeurTitre + 20, 26);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillText(texteTitre, rect.width / 2, 14);
+
+  // ── Flèche du nord (haut-droite) ──
+  const nx = rect.width - 40, ny = 55;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.beginPath(); ctx.arc(nx, ny, 24, 0, 2 * Math.PI); ctx.fill();
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(nx, ny - 16); ctx.lineTo(nx - 6, ny + 6); ctx.lineTo(nx, ny + 1); ctx.lineTo(nx + 6, ny + 6);
+  ctx.closePath();
+  ctx.fillStyle = '#c0392b'; ctx.fill();
+  ctx.fillStyle = '#1a1a1a'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('N', nx, ny - 18);
+  ctx.restore();
+
+  // ── Échelle graphique (bas-gauche) ──
+  const yEchelle = rect.height - 20;
+  const xDepart = 16, xRefPx = 100;
+  let barrePx = 80, texteEchelle = '—';
+  try {
+    const p1 = map.containerPointToLatLng(L.point(xDepart, yEchelle));
+    const p2 = map.containerPointToLatLng(L.point(xDepart + xRefPx, yEchelle));
+    const metresRef = map.distance(p1, p2);
+    if (metresRef > 0) {
+      const metresJolis = palierEchelle(metresRef);
+      barrePx = xRefPx * (metresJolis / metresRef);
+      texteEchelle = metresJolis >= 1000 ? `${metresJolis / 1000} km` : `${metresJolis} m`;
+    }
+  } catch { /* map non disponible : échelle non tracée précisément */ }
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.fillRect(xDepart - 6, yEchelle - 24, Math.max(barrePx, 90) + 20, 40);
+  ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(xDepart, yEchelle); ctx.lineTo(xDepart + barrePx, yEchelle);
+  ctx.moveTo(xDepart, yEchelle - 4); ctx.lineTo(xDepart, yEchelle + 4);
+  ctx.moveTo(xDepart + barrePx, yEchelle - 4); ctx.lineTo(xDepart + barrePx, yEchelle + 4);
+  ctx.stroke();
+  ctx.fillStyle = '#1a1a1a'; ctx.font = '10px Arial'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText(texteEchelle, xDepart, yEchelle - 6);
+
+  // ── Légende (haut-gauche, sous le panneau d'instructions si présent) ──
+  const legendeItems = [
+    ...(aContour ? [['#ffb300', 'polygone', 'Limite du bassin versant']] : []),
+    ...(aContour ? [['#1565c0', 'ligne', 'Cours d\'eau (oueds)']] : []),
+    ...(exutoire ? [['#d32f2f', 'point', 'Exutoire']] : []),
+  ];
+  if (legendeItems.length) {
+    const lx = rect.width - 210, ly = rect.height - 20 - legendeItems.length * 18 - 14;
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillRect(lx - 10, ly - 8, 200, legendeItems.length * 18 + 16);
+    legendeItems.forEach(([couleur, forme, texte], i) => {
+      const iy = ly + i * 18;
+      if (forme === 'point') {
+        ctx.beginPath(); ctx.arc(lx + 6, iy + 5, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = couleur; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+      } else if (forme === 'ligne') {
+        ctx.strokeStyle = couleur; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(lx, iy + 5); ctx.lineTo(lx + 14, iy + 5); ctx.stroke();
+      } else {
+        ctx.fillStyle = couleur; ctx.globalAlpha = 0.35; ctx.fillRect(lx, iy, 14, 10); ctx.globalAlpha = 1;
+        ctx.strokeStyle = couleur; ctx.lineWidth = 1.5; ctx.strokeRect(lx, iy, 14, 10);
+      }
+      ctx.fillStyle = '#1a1a1a'; ctx.font = '10.5px Arial'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(texte, lx + 22, iy + 5);
+    });
+  }
+
+  // ── Coordonnées de l'exutoire ──
+  if (exutoire) {
+    const [elat, elon] = exutoire;
+    const texteCoord = `Exutoire : ${elat.toFixed(5)}°, ${elon.toFixed(5)}°`;
+    ctx.font = '10.5px Arial'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    const w = ctx.measureText(texteCoord).width;
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillRect(rect.width - w - 22, rect.height - 20, w + 12, 18);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillText(texteCoord, rect.width - 16, rect.height - 6);
+  }
+}
+
 /**
  * Composite tuiles + contour + réseau hydro + marqueur en une image PNG,
  * sans dépendre d'une bibliothèque externe. Fonctionne uniquement si les
@@ -105,7 +206,7 @@ function dessinerGeometrie(map, groupeRef, { contour, coursEau, exutoire, exutoi
  * canevas est "taché" et toDataURL() lève une exception, interceptée
  * plus bas avec un message explicite.
  */
-function exporterCarteEnImage(map, container, { contour, coursEau, exutoire }) {
+function exporterCarteEnImage(map, container, { contour, coursEau, exutoire, titre }) {
   const rect = container.getBoundingClientRect();
   const ratio = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
@@ -140,10 +241,12 @@ function exporterCarteEnImage(map, container, { contour, coursEau, exutoire }) {
     ctx.beginPath(); ctx.arc(c.x, c.y, 6, 0, 2 * Math.PI);
     ctx.fillStyle = '#d32f2f'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
   }
+
+  dessinerCartouche(ctx, map, rect, { titre, exutoire, aContour: contour?.length > 2 });
   return canvas;
 }
 
-export default function DelimitationCarte({ lat, lon, geometrie, loading, onConfirmer }) {
+export default function DelimitationCarte({ lat, lon, geometrie, loading, onConfirmer, nomProjet }) {
   const { t } = useI18n();
   const previewDivRef = useRef(null);
   const previewMapObjRef = useRef(null);
@@ -232,13 +335,17 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     }
   }, [candidat, onConfirmer]);
 
+  const titreCarte = nomProjet
+    ? `${t('carteTitreDelimitationDe')} ${nomProjet}`
+    : t('carteTitreDelimitationGenerique');
+
   function telechargerImage() {
     const map = fullMapObjRef.current;
     const div = fullDivRef.current;
     if (!map || !div) return;
     try {
-      const canvas = exporterCarteEnImage(map, div, { contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point });
-      downloadChartCanvas(canvas, 'delimitation-bassin-versant.png', (msg) => setExportMsg(msg));
+      const canvas = exporterCarteEnImage(map, div, { contour: geometrie?.contour, coursEau: geometrie?.coursEau, exutoire: point, titre: titreCarte });
+      downloadChartCanvas(canvas, `delimitation-bassin-versant${nomProjet ? '-'+nomProjet.replace(/\s+/g,'_') : ''}.png`, (msg) => setExportMsg(msg));
     } catch (e) {
       setExportMsg(t('carteExportErreur'));
     }
@@ -265,6 +372,7 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
             justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', pointerEvents: 'none' }}>
             <div style={{ background: 'rgba(255,255,255,.95)', border: `1px solid ${C_BORDER}`, borderRadius: 3,
               padding: '8px 12px', fontSize: 12, maxWidth: 420, pointerEvents: 'auto', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>{titreCarte}</div>
               <b style={{ color: C_BLUE }}>{t('carteTitrePlein')}</b>
               <div style={{ color: '#555', marginTop: 3 }}>{t('carteInstructions')}</div>
               {candidat && <div style={{ marginTop: 4 }}>{t('carteExutoireChoisi')} <b>{candidat.lat.toFixed(5)}, {candidat.lon.toFixed(5)}</b></div>}

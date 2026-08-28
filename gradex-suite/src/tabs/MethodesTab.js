@@ -88,7 +88,7 @@ export const MC_ETAT_INITIAL = {
   geoLat: '', geoLon: '',
 };
 
-export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange, surfaceGradex }) {
+export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange, surfaceGradex, nomProjet }) {
   const { t } = useI18n();
   const patch = useCallback(p => setV(prev => ({ ...prev, ...p })), [setV]);
 
@@ -394,7 +394,7 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
           {t('mcGeoImporterVersGradex')}
         </button>
 
-        <DelimitationCarte lat={v.geoLat} lon={v.geoLon} geometrie={geoGeometrie} loading={geoLoading} onConfirmer={calculerGeo} />
+        <DelimitationCarte lat={v.geoLat} lon={v.geoLon} geometrie={geoGeometrie} loading={geoLoading} onConfirmer={calculerGeo} nomProjet={nomProjet} />
       </CollapseSection>
 
       {/* ── Bassin versant ── */}
