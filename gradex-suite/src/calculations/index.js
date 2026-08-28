@@ -13,6 +13,7 @@ import * as MalletGautier from './methods/malletGautier.js';
 import * as FullerII from './methods/fullerII.js';
 import * as HazanLazarevich from './methods/hazanLazarevich.js';
 import * as TR55 from './methods/tr55.js';
+import * as FrancouRodier from './methods/francouRodier.js';
 
 export const METHODES = [
   { meta: Rationnelle.META, calculer: Rationnelle.calculer },
@@ -22,6 +23,7 @@ export const METHODES = [
   { meta: MalletGautier.META, calculer: MalletGautier.calculer },
   { meta: FullerII.META, calculer: FullerII.calculer },
   { meta: HazanLazarevich.META, calculer: HazanLazarevich.calculer },
+  { meta: FrancouRodier.META, calculer: FrancouRodier.calculer },
 ];
 
 export function getMethode(id) {

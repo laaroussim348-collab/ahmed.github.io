@@ -47,6 +47,7 @@ const LABELS_CHAMPS = {
   fullerII_a: 'Coefficient a (Fuller II)', fullerII_N: 'Coefficient N (Fuller II)',
   hazanLazarevich_a: 'Coefficient a (Hazan-Lazarevich)',
   pma_mm_an: 'Pluie moyenne annuelle (Pma)', longueur_km: 'Longueur du thalweg (L)',
+  fr_surfaceRef: 'Surface de la station de référence (S_ref)', fr_qRef: 'Débit de référence (Q_ref)',
 };
 function libelleChamp(cle) { return LABELS_CHAMPS[cle] || cle; }
 
@@ -58,11 +59,13 @@ const DEPENDANCES = {
   malletGautier: ['malletGautier_K', 'malletGautier_a', 'pma_mm_an', 'surface_km2', 'T', 'longueur_km'],
   fullerII: ['fullerII_a', 'T', 'surface_km2', 'fullerII_N'],
   hazanLazarevich: ['pma_mm_an', 'surface_km2', 'hazanLazarevich_a', 'T'],
+  francouRodier: ['surface_km2', 'fr_surfaceRef', 'fr_qRef', 'T'],
 };
 const ADAPTATEURS = {
   rationnelle: v => ({ surface_km2: v.surface_km2, cr: v.cr, a: v.a, b: v.b, tc_h: v.tc_h, T: v.T }),
   macMath: v => ({ surface_km2: v.surface_km2, h24_mm: v.h24_mm, pente_m_par_m: v.pente_m_par_m, K: v.macMath_K, conventionUnites: v.macMath_convention || 'excel' }),
   burkliZiegler: v => ({ surface_km2: v.surface_km2, h1h_mm: v.h1h_mm, pente_m_par_m: v.pente_m_par_m, cr: v.cr }),
+  francouRodier: v => ({ surface_km2: v.surface_km2, surface_ref_km2: v.fr_surfaceRef, q_ref_m3s: v.fr_qRef, T: v.T }),
   tr55: v => ({ surface_km2: v.surface_km2, CN: v.CN, p24_mm: v.h24_mm, tc_h: v.tc_h }),
   malletGautier: v => ({ K: v.malletGautier_K, a: v.malletGautier_a, pma_m_an: v.pma_mm_an != null ? v.pma_mm_an / 1000 : undefined, surface_km2: v.surface_km2, T: v.T, longueur_km: v.longueur_km }),
   fullerII: v => ({ a: v.fullerII_a, T: v.T, surface_km2: v.surface_km2, N: v.fullerII_N }),
@@ -74,6 +77,7 @@ export const MC_ETAT_INITIAL = {
   T: 100, a: '', b: '', h1h_mm: '', cr: '', CN: '',
   macMath_K: '', macMath_convention: 'excel', pma_mm_an: '',
   malletGautier_K: 2, malletGautier_a: 20, fullerII_a: 2, fullerII_N: '', hazanLazarevich_a: 1,
+  fr_surfaceRef: '', fr_qRef: '',
   tc_h: '', h24_mm: '', pjmax_saisie: '', weiss_k: 1.15, montana_b_suppose: 0.55,
   tcFormuleId: 'kirpich', tcPenteSource: 'globale',
   crCode: '1', crGroupe: 'moyens', crPente: '<=5%',
@@ -611,6 +615,14 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
 
         <CollapseSection title={t('pmaTitre')} icon="cloud" open accent={C_BLUE} onToggle={()=>{}}>
           <Field label={t('pma')} unite="mm/an" value={v.pma_mm_an} onChange={x=>patch({pma_mm_an:x})} type="number" />
+        </CollapseSection>
+
+        <CollapseSection title={t('frTitre')} icon="function" open accent={C_BLUE} onToggle={()=>{}}>
+          <p style={{ fontSize:10.5, color:'#888', marginBottom:6 }}>{t('frHint')}</p>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <Field label={t('frSurfaceRef')} unite="km²" value={v.fr_surfaceRef} onChange={x=>patch({fr_surfaceRef:x})} type="number" />
+            <Field label={t('frQRef')} unite="m³/s" value={v.fr_qRef} onChange={x=>patch({fr_qRef:x})} type="number" />
+          </div>
         </CollapseSection>
 
         <CollapseSection title={t('mgTitre')} icon="function" open accent={C_BLUE} onToggle={()=>{}}>

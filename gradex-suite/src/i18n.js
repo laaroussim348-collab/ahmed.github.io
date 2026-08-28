@@ -184,6 +184,9 @@ const BV = {
     fullerA: 'Coefficient a', fullerN: 'Coefficient N',
     hlTitre: 'Hazan et Lazarevich',
     hlA: 'Coefficient de croissance a',
+    frTitre: 'Francou-Rodier (transposition régionale)',
+    frHint: "Transpose le débit d'une station de référence jaugée (S_ref, Q_ref) vers le bassin étudié, via le coefficient régional K(T). Recommandée par le guide pour les grands bassins (S > 100-150 km²) — nécessite une station de référence climatiquement similaire.",
+    frSurfaceRef: 'Surface — station de référence (S_ref)', frQRef: 'Débit de pointe connu — station de référence (Q_ref)',
     source: 'Source',
 
     p2Titre: '02 — Sélection des méthodes',
@@ -374,6 +377,9 @@ const BV = {
     fullerA: 'المعامل a', fullerN: 'المعامل N',
     hlTitre: 'معادلة Hazan وLazarevich',
     hlA: 'معامل النمو a',
+    frTitre: 'معادلة Francou-Rodier (نقل إقليمي للتدفق)',
+    frHint: 'تنقل تدفق محطة مرجعية مقاسة (S_ref، Q_ref) إلى الحوض المدروس، عبر المعامل الإقليمي K(T). يوصي بها الدليل للأحواض الكبيرة (S > 100-150 كم²) — تتطلب محطة مرجعية مشابهة مناخيًا.',
+    frSurfaceRef: 'مساحة المحطة المرجعية (S_ref)', frQRef: 'التدفق الأقصى المعروف بالمحطة المرجعية (Q_ref)',
     source: 'المصدر',
 
     p2Titre: '02 — اختيار الطرق',
@@ -564,6 +570,9 @@ const BV = {
     fullerA: 'Coefficient a', fullerN: 'Coefficient N',
     hlTitre: 'Hazan and Lazarevich',
     hlA: 'Growth coefficient a',
+    frTitre: 'Francou-Rodier (regional transposition)',
+    frHint: "Transposes the peak flow from a gauged reference station (S_ref, Q_ref) to the studied basin, via the regional coefficient K(T). Recommended by the guide for large basins (S > 100-150 km²) — requires a climatically similar reference station.",
+    frSurfaceRef: 'Reference station surface (S_ref)', frQRef: 'Known peak flow — reference station (Q_ref)',
     source: 'Source',
 
     p2Titre: '02 — Method selection',
@@ -754,6 +763,9 @@ const BV = {
     fullerA: 'Coeficiente a', fullerN: 'Coeficiente N',
     hlTitre: 'Hazan y Lazarevich',
     hlA: 'Coeficiente de crecimiento a',
+    frTitre: 'Francou-Rodier (transposición regional)',
+    frHint: 'Transpone el caudal de una estación de referencia aforada (S_ref, Q_ref) a la cuenca estudiada, mediante el coeficiente regional K(T). Recomendada por la guía para grandes cuencas (S > 100-150 km²) — requiere una estación de referencia climáticamente similar.',
+    frSurfaceRef: 'Superficie — estación de referencia (S_ref)', frQRef: 'Caudal punta conocido — estación de referencia (Q_ref)',
     source: 'Fuente',
 
     p2Titre: '02 — Selección de métodos',
