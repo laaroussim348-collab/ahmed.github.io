@@ -19,7 +19,7 @@ import MethodesTab, { MC_ETAT_INITIAL } from "./tabs/MethodesTab";
 import {
   f2, f3, f6, C_BLUE, C_TEAL, C_AMBER, C_RED, C_BORDER, C_HEADER, C_STRIP,
   TH, TD, TBtn, TSep, Field, CollapseSection, Panel, MItem, ChartBox, NoData,
-  copyChartCanvas, downloadChartCanvas,
+  copyChartCanvas, downloadChartCanvas, copierChampActif, couperChampActif, collerChampActif,
 } from "./ui";
 import { t as t0 } from "./i18n";
 
@@ -963,10 +963,10 @@ function MainApp() {
                 position:"absolute", top:"100%", left:0, background:"#f5f5f5",
                 border:"1px solid #999", boxShadow:"2px 2px 8px rgba(0,0,0,0.2)",
                 minWidth:200, zIndex:1000, padding:"2px 0" }}>
-                <MItem icon="copy"      label={t('mCopier')}    shortcut="Ctrl+C" onClick={()=>{ document.execCommand("copy"); setMenuEdit(false); }} />
-                <MItem icon="scissors"  label={t('mCouper')}    shortcut="Ctrl+X" onClick={()=>{ document.execCommand("cut"); setMenuEdit(false); }} />
+                <MItem icon="copy"      label={t('mCopier')}    shortcut="Ctrl+C" onMouseDown={e=>e.preventDefault()} onClick={()=>{ copierChampActif(showToast); setMenuEdit(false); }} />
+                <MItem icon="scissors"  label={t('mCouper')}    shortcut="Ctrl+X" onMouseDown={e=>e.preventDefault()} onClick={()=>{ couperChampActif(showToast); setMenuEdit(false); }} />
                 <MItem icon="clipboard" label={t('mColler')}    shortcut="Ctrl+V"
-                  onClick={async()=>{ try{ const t=await navigator.clipboard.readText(); if(tab==="donnees") setPasteText(p=>p+"\n"+t); }catch{} setMenuEdit(false); }} />
+                  onMouseDown={e=>e.preventDefault()} onClick={()=>{ collerChampActif(showToast); setMenuEdit(false); }} />
               </div>
             )}
           </div>
@@ -995,11 +995,9 @@ function MainApp() {
             onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
         }} disabled={!res||wordLoad} title="Exporter rapport Word avec graphiques" />
         <TSep />
-        <TBtn icon="copy"      label={t('tbCopier')}  onClick={()=>document.execCommand("copy")} />
-        <TBtn icon="scissors"  label={t('tbCouper')}  onClick={()=>document.execCommand("cut")} />
-        <TBtn icon="clipboard" label={t('tbColler')}  onClick={async()=>{
-          try{ const t=await navigator.clipboard.readText(); if(tab==="donnees") setPasteText(p=>p+"\n"+t); }catch{}
-        }} />
+        <TBtn icon="copy"      label={t('tbCopier')}  onMouseDown={e=>e.preventDefault()} onClick={()=>copierChampActif(showToast)} />
+        <TBtn icon="scissors"  label={t('tbCouper')}  onMouseDown={e=>e.preventDefault()} onClick={()=>couperChampActif(showToast)} />
+        <TBtn icon="clipboard" label={t('tbColler')}  onMouseDown={e=>e.preventDefault()} onClick={()=>collerChampActif(showToast)} />
         <div style={{ flex:1 }} />
         <span style={{ fontSize:11, color:"#555", paddingRight:8 }}>
           {pjData.length} {t('tbDonnees')}
