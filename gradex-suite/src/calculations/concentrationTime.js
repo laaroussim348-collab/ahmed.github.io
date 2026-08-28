@@ -82,39 +82,42 @@ export function tcVentura({ surface_km2, pente_m_par_m }) {
 }
 
 /**
- * Formule de PASSINI — telle que définie dans le guide (p.17) : coefficient 0.8, P en %.
- * ATTENTION : la cellule "formule de passini" du classeur Excel de référence (H21) ne
- * reproduit PAS cette formule ; voir le rapport d'analyse (point ambigu n°5).
+ * Formule de PASSINI — coefficient 64.8 (formule en minutes) = 1.08 en heures, P en %.
+ * Le guide (p.17) indiquait un coefficient 0.8, mais ce document "Calcul de temps de
+ * concentration" fourni par l'utilisateur — dédié à ces formules, avec exemples
+ * numériques vérifiés indépendamment (Tc=64.8×(S×L)^0.333×P%^-0.5, ex. S=4.55km²,
+ * L=18.08km, P=0.5% → Tc=397.97min) — confirme 64.8/1.08. Ce coefficient correspond
+ * aussi exactement à la formule que le classeur Excel de référence nommait (à tort)
+ * "Giandotti" (voir App.js, calcul tc GRADEX natif) : même formule, vrai nom Passini.
  */
 export function tcPassini({ surface_km2, longueur_km, pente_pourcent }) {
-  const tc_h = 0.8 * Math.cbrt(surface_km2 * longueur_km) / Math.sqrt(pente_pourcent);
+  const tc_h = 1.08 * Math.cbrt(surface_km2 * longueur_km) / Math.sqrt(pente_pourcent);
   return finaliser({
     methode: 'Passini',
     tc_h,
-    formule: 'tc (h) = 0.8 × (S(km²)×L(km))^(1/3) / I(%)^0.5',
+    formule: 'tc (h) = 1.08 × (S(km²)×L(km))^(1/3) / I(%)^0.5',
     variables: { 'S (surface)': `${surface_km2} km²`, 'L (longueur)': `${longueur_km} km`, 'I (pente moyenne)': `${pente_pourcent} %` },
     domaine: 'Établie pour des bassins versants plus grands que les petits BV (cf. note du guide). À utiliser avec précaution < 100 km².',
-    source: 'Guide §2.2.4-C p.17',
-    avertissement:
-      "Le classeur Excel fourni calcule une valeur différente sous ce même nom (voir README, point ambigu n°5) : " +
-      'il duplique en réalité la formule de Turrazza. Cette fonction implémente la formule TELLE QU\'ÉCRITE dans le guide.',
+    source: "Document utilisateur « Calcul de temps de concentration » (Tc=64.8×(S×L)^0.333×P%^-0.5)",
   });
 }
 
-/** Formule de TURRAZZA — telle que définie dans le guide (p.16) : coefficient 0.108, P en %. */
-export function tcTurrazza({ surface_km2, longueur_km, pente_pourcent }) {
-  const tc_h = 0.108 * Math.cbrt(surface_km2 * longueur_km) / Math.sqrt(pente_pourcent);
+/**
+ * Formule de TURRAZZA — coefficient 0.108, P en m/m (PAS en %).
+ * Le guide (p.16) indiquait P en %, mais le classeur Excel de référence (cellule
+ * H22) ET ce document "Calcul de temps de concentration" fourni par l'utilisateur
+ * (ex. vérifié : S=1.3km², L=1.94km, P=0.047 m/m → Tc=40.69min) confirment tous deux
+ * P en m/m, pas en %.
+ */
+export function tcTurrazza({ surface_km2, longueur_km, pente_m_par_m }) {
+  const tc_h = 0.108 * Math.cbrt(surface_km2 * longueur_km) / Math.sqrt(pente_m_par_m);
   return finaliser({
     methode: 'Turrazza',
     tc_h,
-    formule: 'tc (h) = 0.108 × (S(km²)×L(km))^(1/3) / I(%)^0.5',
-    variables: { 'S (surface)': `${surface_km2} km²`, 'L (longueur)': `${longueur_km} km`, 'I (pente moyenne)': `${pente_pourcent} %` },
+    formule: 'tc (h) = 0.108 × (S(km²)×L(km))^(1/3) / I(m/m)^0.5',
+    variables: { 'S (surface)': `${surface_km2} km²`, 'L (longueur)': `${longueur_km} km`, 'I (pente moyenne)': `${pente_m_par_m} m/m` },
     domaine: 'Établie pour des bassins versants plus grands que les petits BV (cf. note du guide). À utiliser avec précaution < 100 km².',
-    source: 'Guide §2.2.4-C p.16',
-    avertissement:
-      "Le classeur Excel fourni (cellule H22) applique cette même formule mais avec la pente en m/m au lieu de % " +
-      '(voir README, point ambigu n°5), ce qui multiplie tc par 10. Cette fonction implémente la formule ' +
-      "TELLE QU'ÉCRITE dans le guide (P en %).",
+    source: "Excel 'CARACT DE BV'!H22 ; document utilisateur « Calcul de temps de concentration » (Tc=60×0.108×(S×L)^0.333×P(m/m)^-0.5)",
   });
 }
 
@@ -145,6 +148,6 @@ export const METHODES_TC = [
   { id: 'californienne', nom: 'Californienne', fn: tcCalifornienne, champs: ['longueur_km', 'pente_m_par_m'] },
   { id: 'ventura', nom: 'Ventura', fn: tcVentura, champs: ['surface_km2', 'pente_m_par_m'] },
   { id: 'passini', nom: 'Passini', fn: tcPassini, champs: ['surface_km2', 'longueur_km', 'pente_pourcent'] },
-  { id: 'turrazza', nom: 'Turrazza', fn: tcTurrazza, champs: ['surface_km2', 'longueur_km', 'pente_pourcent'] },
+  { id: 'turrazza', nom: 'Turrazza', fn: tcTurrazza, champs: ['surface_km2', 'longueur_km', 'pente_m_par_m'] },
   { id: 'giandotti', nom: 'Giandotti', fn: tcGiandotti, champs: ['surface_km2', 'longueur_km', 'altitudeMoyenne_m', 'altitudeMin_m'] },
 ];

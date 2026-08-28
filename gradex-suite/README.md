@@ -129,40 +129,40 @@ propre petit `package.json` `{"type":"module"}`. React/Webpack, lui,
 continue de résoudre les imports du dossier `src/` normalement (sans
 extension).
 
-## Formules de temps de concentration : deux sources
+## Formules de temps de concentration : ambiguïté résolue
 
-L'onglet "Calculer TC" (Données) affiche maintenant **10** formules :
-les 7 d'origine de GRADEX, **inchangées**, plus 3 ajoutées depuis BV-Calc
-(Turrazza, Giandotti, Passini) — chaque ligne indique sa source.
+L'onglet "Calculer TC" (Données) affiche **8** formules : les 5 d'origine
+de GRADEX inchangées (Kirpich, Espagnole, Californienne, Ventura, Lag Time)
++ 3 formules BV-Calc (Turrazza, Giandotti standard, Passini) — chaque
+ligne indique sa source.
 
-En vérifiant les formules (recherche + comparaison, comme demandé), une
-divergence réelle est apparue entre les deux logiciels sous **les mêmes
-noms historiques** :
+Historiquement (versions précédentes), GRADEX contenait aussi deux lignes
+"Giandotti" et "Passini" **mal nommées depuis l'origine** :
+`64.8×(S×L)^0.333×I%^-0.5` (étiquetée "Giandotti") et
+`0.108×(S×L)^0.333×I(m/m)^-0.5` (étiquetée "Passini"). Un document dédié
+« Calcul de temps de concentration », fourni par l'utilisateur avec des
+exemples numériques vérifiés indépendamment, a permis d'identifier leurs
+vrais noms :
 
-- **Giandotti** — la formule internationalement reconnue (vérifiée par
-  recherche) est `tc(h) = (4√S + 1.5L) / (0.8√(Hmoy−H0))`. C'est exactement
-  la formule que BV-Calc implémente. Le "Giandotti" déjà présent dans
-  GRADEX (`64.8×(S×L)^0.333×I%^-0.5`) est une formule **différente** — une
-  ambiguïté déjà présente dans le logiciel GRADEX d'origine, probablement
-  héritée du classeur Excel qui a servi de référence à son auteur.
-- **Passini** — GRADEX calcule `0.108×(S×L)^0.333×I(m/m)^-0.5`. Le guide
-  technique d'assainissement routier définit Passini avec un coefficient et
-  une convention d'unité différents (`0.8×(S×L)^(1/3)/I(%)^0.5`) ; la valeur
-  que calcule GRADEX correspond en réalité, numériquement, à ce que ce même
-  guide appelle **Turrazza** — BV-Calc documentait déjà cette ambiguïté
-  côté classeur Excel de référence.
+- La formule à coefficient **64.8** (P en %) est en réalité celle de
+  **PASSINI** (`tc(h)=1.08×(S×L)^(1/3)/I(%)^0.5` — le guide indiquait par
+  erreur un coefficient 0.8 ; corrigé dans `concentrationTime.tcPassini`).
+- La formule à coefficient **0.108** (P en m/m, pas en %) est celle de
+  **TURRAZZA** (`concentrationTime.tcTurrazza` — le guide indiquait P en %
+  par erreur ; confirmé aussi par la cellule Excel 'CARACT DE BV'!H22 qui
+  utilise déjà P en m/m).
+- **Giandotti** (la vraie formule, `tc(h) = (4√S + 1.5L) / (0.8√(Hmoy−H0))`)
+  n'a jamais été présente dans GRADEX — uniquement via BV-Calc.
 
-Conformément à la consigne ("garder exactement la même méthode de calcul"),
-**aucune des deux formules d'origine n'a été modifiée** : les nouvelles
-lignes BV-Calc portent un nom distinct (« *Giandotti (BV-Calc, formule
-standard)* », « *Passini (BV-Calc, Guide RAR82)* ») précisément pour ne pas
-laisser croire qu'elles recalculent la même chose que les lignes GRADEX
-voisines.
+Les deux lignes GRADEX mal nommées ont été **retirées** (elles dupliquaient
+strictement les formules BV-Calc Turrazza/Passini, une fois celles-ci
+corrigées) plutôt que renommées, pour ne pas afficher deux lignes
+identiques sous des noms différents. Aucune formule n'a été perdue : les
+2 formules concernées restent disponibles, une seule fois chacune, sous
+leur vrai nom, dans le bloc BV-Calc.
 
-Formules revérifiées par recherche à cette occasion : Kirpich
-(`0.0195×L(m)^0.77×I^-0.385`, confirmé identique dans les deux logiciels),
-et la méthode GRADEX elle-même (Guillot & Duband, EDF 1967 — extrapolation
-par gradient des pluies extrêmes au-delà d'un débit-seuil/point pivot).
+Formules Kirpich/Espagnole/Californienne/Ventura : confirmées identiques
+(cellules Excel + document tc dédié), aucun changement.
 
 ## Traduction — corrections apportées à BV-Calc
 

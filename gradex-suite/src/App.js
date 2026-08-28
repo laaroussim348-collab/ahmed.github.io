@@ -118,16 +118,6 @@ function computeTC({ L_km, dH_m, S_km2, H_max, H_min }) {
     results.push({ name:"Ventura", tc_min, tc_h: tc_min/60,
       formule:"76.3×(S/I%)^0.5", note:"S(km²), I(%)", source:"gradex" });
   }
-  if (S_km2 > 0 && L_km > 0 && I_pct > 0) {
-    const tc_min = 64.8 * Math.pow(S_km2 * L_km, 0.333) * Math.pow(I_pct, -0.5);
-    results.push({ name:"Giandotti", tc_min, tc_h: tc_min/60,
-      formule:"64.8×(S×L)^0.333×I%^-0.5", note:"S(km²), L(km), I(%)", source:"gradex" });
-  }
-  if (S_km2 > 0 && L_km > 0 && I > 0) {
-    const tc_min = 60 * 0.108 * Math.pow(S_km2 * L_km, 0.333) * Math.pow(I, -0.5);
-    results.push({ name:"Passini", tc_min, tc_h: tc_min/60,
-      formule:"60×0.108×(S×L)^0.333×I^-0.5", note:"S(km²), L(km), I(m/m)", source:"gradex" });
-  }
   if (L_m > 0 && I > 0) {
     const kirpich_min = 0.0195 * Math.pow(L_m, 0.77) * Math.pow(I, -0.385);
     const tc_min = 0.6 * kirpich_min;
@@ -137,29 +127,35 @@ function computeTC({ L_km, dH_m, S_km2, H_max, H_min }) {
 
   // ── Formules complémentaires BV-Calc (Guide technique d'assainissement
   // routier 2020, §2.2.4-C) — AJOUTÉES, sans toucher aux formules GRADEX
-  // ci-dessus. Turrazza n'existait pas dans GRADEX. Giandotti (BV-Calc)
-  // et Passini (BV-Calc) portent volontairement un nom distinct de leurs
-  // homonymes GRADEX ci-dessus : ce sont des formules DIFFÉRENTES sous le
-  // même nom historique (vérifié : le Giandotti "GRADEX" ci-dessus ne
-  // correspond pas à la formule de Giandotti internationalement reconnue
-  // (4√S+1.5L)/(0.8√ΔH), que BV-Calc implémente ; et le "Passini" GRADEX
-  // ci-dessus correspond en réalité, numériquement, à la formule appelée
-  // Turrazza par le guide BV-Calc — voir README §"Formules de temps de
-  // concentration : deux sources"). Chaque ligne garde SA formule EXACTE.
+  // ci-dessus.
+  //
+  // HISTORIQUE (corrigé) : ce bloc contenait auparavant deux entrées
+  // GRADEX nommées "Giandotti" (64.8×(S×L)^0.333×I%^-0.5) et "Passini"
+  // (60×0.108×(S×L)^0.333×I(m/m)^-0.5), mal nommées depuis l'origine.
+  // Un document dédié "Calcul de temps de concentration" fourni par
+  // l'utilisateur (exemples numériques vérifiés indépendamment) a permis
+  // d'identifier leurs VRAIS noms : la formule à 64.8 est en réalité
+  // celle de PASSINI, et celle à 0.108 (P en m/m) est celle de TURRAZZA
+  // — qui existent déjà, correctement nommées et calculées, ci-dessous
+  // (concentrationTime.tcPassini / tcTurrazza, eux-mêmes corrigés par le
+  // même document : Passini 0.8→1.08, Turrazza P%→P(m/m)). Les 2 entrées
+  // GRADEX mal nommées ont donc été retirées (strict doublon numérique
+  // une fois les deux corrigées) plutôt que renommées, pour éviter
+  // d'afficher deux lignes identiques sous des noms différents.
   try {
-    const r = concentrationTime.tcTurrazza({ surface_km2: S_km2, longueur_km: L_km, pente_pourcent: I_pct });
+    const r = concentrationTime.tcTurrazza({ surface_km2: S_km2, longueur_km: L_km, pente_m_par_m: I });
     results.push({ name: "Turrazza (BV-Calc)", tc_min: r.tc_min, tc_h: r.tc_h, formule: r.formule,
-      note: "Guide RAR82/SETRA — nouvelle formule (absente de GRADEX)", source: "bvcalc" });
+      note: "Guide RAR82/SETRA", source: "bvcalc" });
   } catch { /* entrées insuffisantes */ }
   try {
     const r = concentrationTime.tcGiandotti({ surface_km2: S_km2, longueur_km: L_km, altitudeMoyenne_m: H_max, altitudeMin_m: H_min });
     results.push({ name: "Giandotti (BV-Calc, formule standard)", tc_min: r.tc_min, tc_h: r.tc_h, formule: r.formule,
-      note: "Formule internationale (4√S+1.5L)/(0.8√ΔH) — distincte du \"Giandotti\" GRADEX ci-dessus", source: "bvcalc" });
+      note: "Formule internationale (4√S+1.5L)/(0.8√ΔH)", source: "bvcalc" });
   } catch { /* entrées insuffisantes */ }
   try {
     const r = concentrationTime.tcPassini({ surface_km2: S_km2, longueur_km: L_km, pente_pourcent: I_pct });
     results.push({ name: "Passini (BV-Calc, Guide RAR82)", tc_min: r.tc_min, tc_h: r.tc_h, formule: r.formule,
-      note: "Distincte du \"Passini\" GRADEX ci-dessus (voir avertissement du Guide)", source: "bvcalc" });
+      note: "64.8×(S×L)^0.333×I%^-0.5", source: "bvcalc" });
   } catch { /* entrées insuffisantes */ }
 
   results.forEach(r => {
@@ -1138,7 +1134,7 @@ function MainApp() {
                   )}
                 </CollapseSection>
 
-                <CollapseSection title={`${t('gxCalculerTcTitre')} (${10} ${t('p3Methodes')})`}
+                <CollapseSection title={`${t('gxCalculerTcTitre')} (${8} ${t('p3Methodes')})`}
                   icon="clock-hour-4" open={showTC} onToggle={()=>setShowTC(v=>!v)} accent={C_TEAL}>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:6, marginBottom:8 }}>
                     {[
