@@ -91,6 +91,9 @@ const BV = {
     carteConfirmerBtn: '✓ Confirmer et délimiter',
     carteTelechargerBtn: "⬇ Télécharger l'image",
     carteExportErreur: "Échec de l'export de l'image (tuiles de la carte non chargées ou bloquées). Réessayez une fois la carte bien affichée.",
+    carteOccupationSolBtn: 'Occupation du sol', carteOccupationSolHint: "Afficher/masquer la couche d'occupation du sol (ESA WorldCover, 10 m) — repère visuel pour choisir le code Cr/CN, aucun calcul automatique.",
+    carteOccupationSolErreur: "La couche d'occupation du sol n'a pas pu être chargée (service indisponible ou bloqué).",
+    carteOccupationSolLegende: 'Occupation du sol',
 
     bvTitre: '🗺️ Bassin versant',
     bvSurface: 'Surface (A)',
@@ -286,6 +289,9 @@ const BV = {
     carteConfirmerBtn: '✓ تأكيد وتحديد الحوض',
     carteTelechargerBtn: '⬇ تحميل الصورة',
     carteExportErreur: 'فشل تصدير الصورة (بلاطات الخريطة لم تُحمّل أو محظورة). أعد المحاولة بعد تحميل الخريطة بالكامل.',
+    carteOccupationSolBtn: 'استخدام الأرض', carteOccupationSolHint: 'إظهار/إخفاء طبقة استخدام الأرض (ESA WorldCover، دقة 10م) — مرجع بصري لاختيار رمز Cr/CN، بدون أي حساب تلقائي.',
+    carteOccupationSolErreur: 'تعذّر تحميل طبقة استخدام الأرض (الخدمة غير متوفرة أو محظورة).',
+    carteOccupationSolLegende: 'استخدام الأرض',
 
     bvTitre: '🗺️ الحوض المائي',
     bvSurface: 'المساحة (A)',
@@ -481,6 +487,9 @@ const BV = {
     carteConfirmerBtn: '✓ Confirm and delineate',
     carteTelechargerBtn: '⬇ Download image',
     carteExportErreur: 'Image export failed (map tiles not loaded or blocked). Try again once the map is fully displayed.',
+    carteOccupationSolBtn: 'Land cover', carteOccupationSolHint: 'Show/hide the land cover layer (ESA WorldCover, 10 m) — visual reference for choosing the Cr/CN code, no automatic computation.',
+    carteOccupationSolErreur: 'The land cover layer could not be loaded (service unavailable or blocked).',
+    carteOccupationSolLegende: 'Land cover',
 
     bvTitre: '🗺️ Watershed',
     bvSurface: 'Area (A)',
@@ -676,6 +685,9 @@ const BV = {
     carteConfirmerBtn: '✓ Confirmar y delimitar',
     carteTelechargerBtn: '⬇ Descargar imagen',
     carteExportErreur: 'Error al exportar la imagen (teselas del mapa no cargadas o bloqueadas). Vuelva a intentarlo cuando el mapa esté completamente cargado.',
+    carteOccupationSolBtn: 'Cobertura del suelo', carteOccupationSolHint: 'Mostrar/ocultar la capa de cobertura del suelo (ESA WorldCover, 10 m) — referencia visual para elegir el código Cr/CN, sin cálculo automático.',
+    carteOccupationSolErreur: 'No se pudo cargar la capa de cobertura del suelo (servicio no disponible o bloqueado).',
+    carteOccupationSolLegende: 'Cobertura del suelo',
 
     bvTitre: '🗺️ Cuenca hidrográfica',
     bvSurface: 'Superficie (A)',
