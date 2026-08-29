@@ -1,24 +1,35 @@
-# GRADEX — Débits de Crue & Bassins Versants
+# HydroCrue — Débits de Crue & Bassins Versants
+
+> **Nom du produit** : le logiciel s'appelle désormais **HydroCrue** (et non
+> plus seulement "GRADEX") — il ne se limite plus à la seule méthode GRADEX
+> depuis la fusion avec BV-Calc (8 méthodes de débit de pointe au total, voir
+> plus bas). "GRADEX" reste, dans tout ce document et dans l'interface, le
+> nom de la **méthode** de Guillot & Duband (1967) — une des méthodes
+> proposées, plus le nom du produit.
 
 Fusion de **GRADEX** (méthode de Guillot & Duband, 1967 — débits de crue par
 extrapolation du gradient des pluies extrêmes) et de **BV-Calc** (débit de
 pointe des petits bassins versants — méthodes du *Guide technique
 d'assainissement routier 2020*), en un seul logiciel de bureau (Electron).
 
-- **Interface, rapport, mise en page** : ceux de GRADEX (barre de titre,
-  menus Fichier/Éditer, barre d'outils, onglets, rapport Word) — inchangés.
-- **Moteur de calcul** : GRADEX (méthode GRADEX, inchangée) **+** BV-Calc
-  (7 méthodes de débit de pointe, temps de concentration, CN, Cr,
-  délimitation automatique, pluviométrie NASA POWER — formules copiées à
-  l'identique, aucune formule modifiée).
+- **Interface, rapport, mise en page** : ceux de l'ex-GRADEX (barre de
+  titre, menus Fichier/Éditer, barre d'outils, onglets, rapport Word) —
+  inchangés, seul le nom affiché ("HydroCrue") a changé.
+- **Moteur de calcul** : GRADEX (méthode GRADEX, inchangée, désormais une
+  méthode sélectionnable parmi les autres — voir "Onglets fusionnés"
+  plus bas) **+** BV-Calc (7 méthodes de débit de pointe, temps de
+  concentration, CN, Cr, délimitation automatique, pluviométrie NASA POWER —
+  formules copiées à l'identique, aucune formule modifiée).
 - **Licence** : celle de BV-Calc (Identifiant Machine + Google Sheets,
-  tolérance hors-ligne de 7 jours) **+** un mode essai 24h autonome (comme
-  BV-Calc), remplaçant l'ancien système IP de GRADEX.
+  tolérance hors-ligne de 7 jours) **+** un mode essai autonome de 7 jours
+  (porté de 24h à 7 jours le 29/08/2026), remplaçant l'ancien système IP de
+  GRADEX.
 - **Langues** : FR / AR (RTL) / EN / ES — système de traduction de BV-Calc,
-  étendu à toute l'interface GRADEX, avec correction des quelques messages
-  de BV-Calc qui n'étaient en réalité jamais traduits (voir plus bas).
-- **Projet** : sauvegarde/ouverture `.hyd` de GRADEX, inchangée, étendue
-  pour inclure aussi les données de l'onglet "Méthodes complémentaires".
+  étendu à toute l'interface, avec correction des quelques messages de
+  BV-Calc qui n'étaient en réalité jamais traduits (voir plus bas).
+- **Projet** : sauvegarde/ouverture `.hyd` de l'ex-GRADEX, inchangée,
+  étendue pour inclure aussi les données de l'onglet "Méthodes
+  complémentaires".
 
 ## Démarrage rapide
 
@@ -57,7 +68,7 @@ npm test
 
 ```bash
 npm run dist          # version vendue (licence par code) -> dist/
-npm run dist:essai     # version d'essai 24h, sans code    -> dist-essai/
+npm run dist:essai     # version d'essai 7 jours, sans code -> dist-essai/
 ```
 
 Les deux versions s'installent l'une à côté de l'autre (noms, dossiers et
@@ -79,9 +90,10 @@ raccourcis distincts — voir `scripts/build-essai.mjs`).
 > GRADEX (distincts de ceux ci-dessus) ne doivent jamais être réutilisés
 > pour ce produit fusionné.
 
-Le mode essai 24h (`npm run dist:essai`) ne passe jamais par ce système : il
-s'auto-active dès le premier lancement, sans code ni connexion, pendant 24h,
-puis se verrouille définitivement (voir `src/services/trialClient.js`).
+Le mode essai (`npm run dist:essai`) ne passe jamais par ce système : il
+s'auto-active dès le premier lancement, sans code ni connexion, pendant
+7 jours, puis se verrouille définitivement (voir
+`src/services/trialClient.js`, `DUREE_ESSAI_HEURES`).
 
 ## Architecture
 
@@ -95,11 +107,15 @@ src/
                           tout l'habillage reste cohérent.
   i18n.js / useI18n.js    Dictionnaire FR/AR/EN/ES (base = BV-Calc, étendu).
   licence/LicenceGate.js  Écran d'activation : visuel GRADEX, logique
-                          BV-Calc (Identifiant Machine, essai 24h).
-  tabs/MethodesTab.js     Onglet "Méthodes complémentaires" — porte
-                          l'intégralité de l'ex-BV-Calc (délimitation,
-                          pluviométrie, Cr, CN, 7 méthodes de débit de
-                          pointe) dans l'habillage GRADEX.
+                          BV-Calc (Identifiant Machine, essai 7 jours).
+  tabs/LocalisationDelimitation.js  "Localisation & calcul automatique" —
+                          rendu en tout premier dans l'onglet fusionné
+                          (App.js), extrait de MethodesTab.js pour que la
+                          délimitation soit le tout premier élément visible.
+  tabs/MethodesTab.js     Reste de l'onglet "Méthodes complémentaires" —
+                          porte l'ex-BV-Calc (géométrie, pluviométrie, Cr,
+                          CN, 8 méthodes de débit de pointe dont GRADEX)
+                          dans l'habillage GRADEX.
   calculations/, data/    Moteur de calcul BV-Calc — copié À L'IDENTIQUE
                           (aucune formule modifiée), voir tests/.
   services/               Licence (machineId/licenseClient/trialClient),
@@ -109,7 +125,7 @@ server.mjs                Sert build/ (interface compilée) + API de licence
                           et proxys réseau (délimitation, pluviométrie) —
                           repris de BV-Calc, adapté pour servir build/.
 electron-main.mjs          Version vendue (licence par code).
-electron-main-essai.mjs    Version d'essai (24h, build séparée).
+electron-main-essai.mjs    Version d'essai (7 jours, build séparée).
 admin/licences-admin.html  Outil d'administration unifié (fusion des deux
                           outils d'origine, schéma Identifiant Machine).
 ```
@@ -232,13 +248,57 @@ manuellement).
   augmentés à 60s (un grand bassin demande un calcul plus long), et
   l'avertissement "surface hors plage usuelle" reformulé pour ne plus
   laisser croire à un rejet (le calcul est toujours effectué).
-- **Essai 24h** : mécanisme vérifié, fonctionne comme prévu (verrouillage
-  strict 24h après le tout premier lancement, persistant dans
-  `.essai-local.json`) — un essai qui "ne marche plus" après plusieurs
-  heures d'utilisation intensive est le comportement attendu, pas un bug.
-  Seule correction apportée : l'affichage du temps restant utilisait
-  `Math.floor` (un essai qui vient de démarrer affichait "23 h restant" au
-  lieu de "24 h") — remplacé par `Math.ceil` dans `LicenceGate.js`.
+- **Essai** : mécanisme vérifié, fonctionne comme prévu (verrouillage strict
+  après le tout premier lancement, persistant dans `.essai-local.json`) — un
+  essai qui "ne marche plus" après une utilisation intensive prolongée est
+  le comportement attendu, pas un bug. Deux ajustements apportés (retour
+  utilisateur du 29/08/2026) : (1) durée portée de 24h à **7 jours**
+  (`DUREE_ESSAI_HEURES` dans `trialClient.js`), les anciens clients BV-Calc
+  avaient besoin de plus de temps pour évaluer la version fusionnée ; (2)
+  l'affichage du temps restant utilisait `Math.floor` (un essai qui vient de
+  démarrer affichait une unité déjà entamée, ex. "23 h" au lieu de "24 h")
+  — remplacé par `Math.ceil` dans `LicenceGate.js`, et affiche désormais des
+  jours au-delà de 24h (ex. "7 j").
+- **Renommage** : le produit s'appelle désormais **HydroCrue** (au lieu de
+  "GRADEX" seul), pour refléter la fusion avec BV-Calc — voir la note en
+  tête de ce document. "GRADEX" reste utilisé partout où il désigne la
+  méthode de Guillot & Duband elle-même (une méthode parmi 8 désormais).
+
+## Corrections (retours utilisateur du 29/08/2026)
+
+- **Délimitation déplacée en tête d'onglet** : la "Localisation & calcul
+  automatique" (carte + coordonnées) était auparavant nichée sous les
+  paramètres/Pjmax GRADEX dans l'onglet fusionné — c'est pourtant le point
+  de départ naturel d'un nouveau projet (elle alimente automatiquement
+  surface/périmètre/altitudes/pente ET la série Pjmax). Extraite dans un
+  composant séparé (`src/tabs/LocalisationDelimitation.js`) et rendue en
+  tout premier dans l'onglet "Données & Méthodes" (`App.js`). L'aperçu de
+  carte est aussi passé de 150px à 380px de hauteur (visible "en
+  professionnel", pas juste une vignette) et n'est plus replié par défaut.
+- **"Zoom étendue"** (comme AutoCAD) ajouté à la carte de délimitation
+  plein écran : recadre la vue sur l'ensemble du contour/tracé à tout
+  moment (pas seulement à l'ouverture), via `L.featureGroup()` (au lieu de
+  `layerGroup()`, qui n'expose pas `.getBounds()`).
+- **Cartouche de la carte traduite** : les textes de la légende ("Limite du
+  bassin versant", "Cours d'eau", "Exutoire") et le titre par défaut de la
+  carte exportée étaient codés en dur en français — ils utilisent
+  maintenant `t()` (import direct de `src/i18n.js`, la carte est dessinée
+  hors du rendu React) et changent donc de langue avec le reste de
+  l'interface.
+- **Longueur du thalweg principal (L)** : placée sur sa propre ligne pleine
+  largeur (au lieu de partager une case étroite avec Surface/Périmètre),
+  pour rester lisible — c'est une donnée clé (pente, tc, plusieurs méthodes
+  de débit de pointe en dépendent).
+- **Rapport Word professionnalisé** : nouvelle section "Caractéristiques du
+  bassin versant" (surface, périmètre, longueur du thalweg, altitudes,
+  indice de compacité de Gravelius (Kg) + forme, indice de Horton (Kh),
+  rectangle équivalent, pente globale/pondérée, tc/Cr/CN adoptés) — calculée
+  par une fonction pure partagée (`calculerCaracteristiquesBV`, App.js)
+  entre l'aperçu écran de l'onglet Rapport et l'export Word, pour qu'ils
+  restent identiques. La section "Méthodes complémentaires" affiche
+  désormais aussi le détail des calculs (étapes/formules/application/
+  hypothèses de chaque méthode), pas seulement le résultat final — dans
+  l'esprit d'un rapport de PFE/bureau d'études.
 
 ## Limites connues
 

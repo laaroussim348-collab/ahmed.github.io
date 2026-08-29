@@ -1,5 +1,5 @@
 /**
- * electron-main.mjs — point d'entrée de l'application de bureau GRADEX.
+ * electron-main.mjs — point d'entrée de l'application de bureau HydroCrue.
  * -----------------------------------------------------------------------
  * Démarre le serveur local (server.mjs) et ouvre une fenêtre native pointée
  * dessus — comme un vrai logiciel installé (HEC-RAS, AutoCAD, Global
@@ -28,7 +28,7 @@ function creerFenetre() {
     height: 920,
     minWidth: 1024,
     minHeight: 700,
-    title: 'GRADEX',
+    title: 'HydroCrue',
     icon: path.join(__dirname, 'build-resources', 'icon.png'),
     backgroundColor: '#e8e8e8',
     webPreferences: {

@@ -27,8 +27,6 @@ import { useI18n } from '../useI18n';
 import {
   Panel, Field, Select, CollapseSection, Alert, TH, TD, C_BORDER, C_TEAL, C_BLUE, C_RED, C_STRIP,
 } from '../ui';
-import DelimitationCarte from '../DelimitationCarte.js';
-
 function fmt(v, d = 3) {
   if (v === undefined || v === null || Number.isNaN(v)) return '—';
   return Number(v).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -78,7 +76,7 @@ export const MC_ETAT_INITIAL = {
   macMath_K: '', macMath_convention: 'excel', pma_mm_an: '',
   malletGautier_K: 2, malletGautier_a: 20, fullerII_a: 2, fullerII_N: '', hazanLazarevich_a: 1,
   fr_surfaceRef: '', fr_qRef: '',
-  tc_h: '', h24_mm: '', pjmax_saisie: '', weiss_k: 1.15, montana_b_suppose: 0.55,
+  tc_h: '', h24_mm: '', pjmax_saisie: '', weiss_k: 1.15, montana_b_suppose: 0.55, h24Source: 'weiss',
   tcFormuleId: 'kirpich', tcPenteSource: 'globale',
   crCode: '1', crGroupe: 'moyens', crPente: '<=5%',
   cnCategorie: '', cnCondition: '', cnGroupeSol: 'B', cnAmc: 'II', cnCoefAmcI: '0.058',
@@ -88,25 +86,22 @@ export const MC_ETAT_INITIAL = {
   geoLat: '', geoLon: '',
 };
 
-export default function MethodesTab({ v, setV, showToast, onImportToGradex, onResultatsChange, surfaceGradex, nomProjet, onCarteImage, gradexDisponible, gradexResultat }) {
+export default function MethodesTab({ v, setV, showToast, onResultatsChange, surfaceGradex, gradexDisponible, gradexResultat }) {
   const { t } = useI18n();
   const patch = useCallback(p => setV(prev => ({ ...prev, ...p })), [setV]);
 
-  // Sens inverse de importerVersGradex() : si l'utilisateur a déjà saisi la
-  // surface dans l'onglet GRADEX (Données) AVANT d'ouvrir Méthodes
-  // complémentaires, on la reprend automatiquement — pas de ressaisie.
-  // Ne s'applique que tant que v.surface_km2 est vide (jamais d'écrasement
-  // d'une valeur déjà saisie/calculée ici, ex. par la délimitation auto).
+  // Sens inverse de importerVersGradex() (voir LocalisationDelimitation.js) :
+  // si l'utilisateur a déjà saisi la surface dans l'onglet GRADEX (Données)
+  // AVANT d'ouvrir Méthodes complémentaires, on la reprend automatiquement —
+  // pas de ressaisie. Ne s'applique que tant que v.surface_km2 est vide
+  // (jamais d'écrasement d'une valeur déjà saisie/calculée ici, ex. par la
+  // délimitation auto).
   useEffect(() => {
     if (surfaceGradex && !v.surface_km2) patch({ surface_km2: surfaceGradex });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surfaceGradex]);
 
-  const [showGeo, setShowGeo] = useState(false);
   const [showHypso, setShowHypso] = useState(false);
-  const [geoLoading, setGeoLoading] = useState(false);
-  const [geoMsg, setGeoMsg] = useState(null); // { html, tone }
-  const [geoGeometrie, setGeoGeometrie] = useState(null); // { contour, coursEau } — pour la carte
   const [tcResult, setTcResult] = useState(null);
   const [crResult, setCrResult] = useState(null);
   const [cnResult, setCnResult] = useState(null);
@@ -213,11 +208,10 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
     patch({ h1h_mm: parseFloat(v.a) });
   }
 
-  const [h24Source, setH24Source] = useState('weiss');
   function calculerH24() {
     try {
       let r;
-      if (h24Source === 'weiss') {
+      if (v.h24Source === 'weiss') {
         const pjmax_mm = parseFloat(v.pjmax_saisie);
         const coefficient = parseFloat(v.weiss_k) || 1.15;
         if (Number.isNaN(pjmax_mm)) throw new Error(t('fixRenseignezPjmaxT'));
@@ -260,84 +254,6 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
       setCnResult({ base: base.cn, ajuste: ajuste.cn, formule: ajuste.formule, amc: v.cnAmc });
       patch({ CN: ajuste.cn });
     } catch (e) { setCnResult({ erreur: e.message }); }
-  }
-
-  // ── Localisation & calcul automatique (mghydro.com + NASA POWER) ──
-  // lat/lon explicites (ex. clic sur la carte) prioritaires sur v.geoLat/v.geoLon.
-  async function calculerGeo(latArg, lonArg) {
-    const lat = latArg ?? parseFloat(v.geoLat);
-    const lon = lonArg ?? parseFloat(v.geoLon);
-    if (Number.isNaN(lat) || Number.isNaN(lon)) { setGeoMsg({ tone:'error', html:t('geoErreurCoords') }); throw new Error(t('geoErreurCoords')); }
-    patch({ geoLat: String(lat), geoLon: String(lon) });
-    setGeoLoading(true);
-    setGeoMsg({ tone:'info', html:t('geoEnCours') });
-    const avertissements = [];
-    let ok = false, okDelineation = false, html = '';
-    try {
-      const rep = await fetch(`/api/delineation?lat=${lat}&lon=${lon}`);
-      const data = await rep.json();
-      if (!data.ok) throw new Error(data.erreur || t('fixEchecDelimitation'));
-      const patchGeo = { surface_km2: data.surface_km2 };
-      if (data.perimetre_km != null) patchGeo.perimetre_km = data.perimetre_km.toFixed(4);
-      if (data.longueur_km) patchGeo.longueur_km = data.longueur_km.toFixed(4);
-      if (data.altitude_min_m != null) patchGeo.altitude_min_m = data.altitude_min_m;
-      if (data.altitude_max_m != null) patchGeo.altitude_max_m = data.altitude_max_m;
-      if (data.troncons?.length) {
-        patchGeo.troncons = data.troncons.map(tr => ({ longueur_m: Math.round(tr.longueur_m * 10) / 10, altAmont: tr.altitude_amont_m, altAval: tr.altitude_aval_m }));
-      }
-      patch(patchGeo);
-      if (data.contour_latlon?.length) {
-        setGeoGeometrie({ contour: data.contour_latlon, coursEau: data.coursEau_latlon || [] });
-      }
-      html += `✅ ${t('fixSurfacePerimetre')} ${fmt(data.surface_km2, 2)} ${t('fixPerimetreApprox')} ${fmt(data.perimetre_km, 2)} ${t('fixKm')}` +
-        (data.longueur_km ? `${t('fixThalwegApprox')} ${fmt(data.longueur_km, 2)} ${t('fixKm')}` : '') + '.';
-      avertissements.push(...(data.avertissements || []));
-      ok = true; okDelineation = true;
-      // Synchronise automatiquement la surface avec l'onglet GRADEX (Données) —
-      // la surface extraite par la délimitation ne doit pas être ressaisie
-      // manuellement. On utilise data.surface_km2 directement (pas v.surface_km2,
-      // qui n'est pas encore à jour : patch() ci-dessus est asynchrone).
-      // lat/lon transmis aussi : permet à App.js de lancer automatiquement le
-      // téléchargement de la série Pjmax (Open-Meteo ERA5) pour ce même point,
-      // sans clic manuel séparé sur "Importer depuis Open-Meteo ERA5".
-      onImportToGradex?.({ surface: data.surface_km2, lat, lon });
-    } catch (e) { html += `❌ ${t('erreur')} ${e.message}`; }
-
-    try {
-      const rep = await fetch(`/api/pluviometrie?lat=${lat}&lon=${lon}`);
-      const data = await rep.json();
-      if (!data.ok) throw new Error(data.erreur || t('fixEchecPluviometrie'));
-      const T = v.T || 100;
-      if (data.pjmax) {
-        const pjmaxT = data.pjmax.pjmax[T] ?? data.pjmax.pjmax[100];
-        patch({ pjmax_saisie: pjmaxT.toFixed(2) });
-        setH24Source('weiss');
-        html += `<br>✅ ${t('fixPjmaxApprox')}${T}${t('fixAnsApprox')} ${fmt(pjmaxT, 1)} ${t('fixMmApprox')}${data.pjmax.anneesDisponibles} ${t('fixAnsDisponibles')} ${data.pjmax.premiereAnnee}-${data.pjmax.derniereAnnee}).`;
-      }
-      if (data.montana) {
-        const mT = data.montana.montana[T] ?? data.montana.montana[100];
-        patch({ a: mT.a.toFixed(3), b: mT.b.toFixed(4), h1h_mm: mT.a.toFixed(2) });
-        html += `<br>✅ ${t('fixMontanaEstime')}${fmt(mT.a, 2)}${t('fixBApprox')}${fmt(mT.b, 3)}${t('fixR2Approx')}${fmt(mT.r2, 2)}). ${t('fixH1hDeduit')}${fmt(mT.a, 2)}${t('fixMmDeduitAuto')}`;
-      }
-      if (data.pma) {
-        patch({ pma_mm_an: data.pma.pma_mm_an.toFixed(1) });
-        html += `<br>✅ ${t('fixPmaApprox')} ${fmt(data.pma.pma_mm_an, 1)} ${t('fixMmAnMoyenne')} ${data.pma.anneesUtilisees} ${t('fixAnsAlimente')}`;
-      }
-      avertissements.push(...(data.avertissements || []));
-      ok = true;
-    } catch (e) { html += `<br>❌ ${t('erreur')} ${e.message}`; }
-
-    html += ok ? `<br><strong>${t('geoVerifiez')}</strong>` : `<br>${t('geoManuel')}`;
-    if (avertissements.length) html += '<br>' + avertissements.map(a => `⚠️ ${a}`).join('<br>');
-    setGeoMsg({ tone: ok ? 'ok' : 'error', html });
-    setGeoLoading(false);
-    if (!okDelineation) throw new Error(t('fixEchecDelimitation'));
-  }
-
-  function importerVersGradex() {
-    if (!v.surface_km2 && !v.tc_h) return;
-    onImportToGradex({ surface: v.surface_km2, tc: v.tc_h });
-    showToast(t('mcGeoImporterFait'));
   }
 
   // ── Sélection des méthodes + résultats ────────────────────
@@ -409,36 +325,20 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
     <div>
       <Alert tone="info" icon="info-circle">{t('mcIntro')}</Alert>
 
-      {/* ── Localisation & calcul automatique ── */}
-      <CollapseSection title={t('geoTitre')} icon="map-2" open={showGeo} onToggle={() => setShowGeo(s => !s)} accent={C_BLUE}>
-        <p style={{ fontSize:11, color:'#555', lineHeight:1.7, marginBottom:8 }}>{t('geoHint')}</p>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, alignItems:'end' }}>
-          <Field label={t('geoLat')} value={v.geoLat} onChange={x => patch({ geoLat:x })} type="number" placeholder="33.9716" />
-          <Field label={t('geoLon')} value={v.geoLon} onChange={x => patch({ geoLon:x })} type="number" placeholder="-6.8498" />
-          <button onClick={() => calculerGeo().catch(() => {})} disabled={geoLoading}
-            style={{ height:24, padding:'0 12px', background:geoLoading?'#aaa':C_BLUE, color:'#fff', border:'none',
-              fontSize:11, cursor:geoLoading?'not-allowed':'pointer', marginBottom:6 }}>
-            {geoLoading ? t('gxChargement') : t('geoCalcBtn')}
-          </button>
-        </div>
-        {geoMsg && <Alert tone={geoMsg.tone === 'ok' ? 'ok' : geoMsg.tone === 'error' ? 'error' : 'info'}>
-          <span dangerouslySetInnerHTML={{ __html: geoMsg.html }} />
-        </Alert>}
-        <button onClick={importerVersGradex} disabled={!v.surface_km2 && !v.tc_h}
-          style={{ marginTop:4, padding:'4px 10px', fontSize:11, background:'#fff', border:`1px solid ${C_BORDER}`,
-            cursor: (!v.surface_km2 && !v.tc_h) ? 'not-allowed' : 'pointer', opacity: (!v.surface_km2 && !v.tc_h) ? 0.5 : 1 }}>
-          {t('mcGeoImporterVersGradex')}
-        </button>
-
-        <DelimitationCarte lat={v.geoLat} lon={v.geoLon} geometrie={geoGeometrie} loading={geoLoading} onConfirmer={calculerGeo} nomProjet={nomProjet} onImageExportee={onCarteImage} />
-      </CollapseSection>
-
       {/* ── Bassin versant ── */}
       <Panel title={t('gxParamBv')} icon="map">
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
           <Field label={t('bvSurface')} unite="km²" value={v.surface_km2} onChange={x=>patch({surface_km2:x})} type="number" />
           <Field label={t('bvPerimetre')} unite="km" value={v.perimetre_km} onChange={x=>patch({perimetre_km:x})} type="number" />
+        </div>
+        {/* Longueur du thalweg principal (L) sur sa propre ligne, en pleine
+            largeur : c'est une donnée clé (pente, tc, plusieurs méthodes de
+            débit de pointe en dépendent) qui mérite d'être plus lisible que
+            dans une case étroite partagée avec les autres champs. */}
+        <div style={{ marginTop:10 }}>
           <Field label={t('bvLongueur')} unite="km" value={v.longueur_km} onChange={x=>patch({longueur_km:x})} type="number" />
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginTop:10 }}>
           <Field label={t('bvAltmin')} unite="m" value={v.altitude_min_m} onChange={x=>patch({altitude_min_m:x})} type="number" />
           <Field label={t('bvAltmax')} unite="m" value={v.altitude_max_m} onChange={x=>patch({altitude_max_m:x})} type="number" />
           <Field label={t('bvAltmoy')} unite="m" value={v.altitudeMoyenne_m} onChange={x=>patch({altitudeMoyenne_m:x})} type="number" />
@@ -569,14 +469,14 @@ export default function MethodesTab({ v, setV, showToast, onImportToGradex, onRe
           <b style={{ fontSize:12, color:C_BLUE }}>{t('h24Titre')}</b>
           <p style={{ fontSize:10.5, color:'#888', margin:'4px 0' }}>{t('h24Hint')}</p>
           <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, marginBottom:4 }}>
-            <input type="radio" checked={h24Source==='weiss'} onChange={()=>setH24Source('weiss')} />{t('h24WeissLabel')}
+            <input type="radio" checked={v.h24Source==='weiss'} onChange={()=>patch({h24Source:'weiss'})} />{t('h24WeissLabel')}
           </label>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, opacity: h24Source==='weiss'?1:0.4, marginBottom:6 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, opacity: v.h24Source==='weiss'?1:0.4, marginBottom:6 }}>
             <Field label={t('h24Pjmax')} unite="mm" value={v.pjmax_saisie} onChange={x=>patch({pjmax_saisie:x})} type="number" />
             <Field label={t('h24CoeffK')} value={v.weiss_k} onChange={x=>patch({weiss_k:x})} type="number" />
           </div>
           <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, marginBottom:6 }}>
-            <input type="radio" checked={h24Source==='montana'} onChange={()=>setH24Source('montana')} />{t('h24MontanaLabel')}
+            <input type="radio" checked={v.h24Source==='montana'} onChange={()=>patch({h24Source:'montana'})} />{t('h24MontanaLabel')}
           </label>
           <button onClick={calculerH24} style={{ padding:'4px 12px', background:C_TEAL, color:'#fff', border:'none', fontSize:11, cursor:'pointer' }}>{t('h24CalcBtn')}</button>
           <div style={{ fontSize:11, marginTop:6 }}>{t('h24Resultat')} : {v.h24_mm ? <b>{fmt(v.h24_mm,3)} mm</b> : '—'}</div>

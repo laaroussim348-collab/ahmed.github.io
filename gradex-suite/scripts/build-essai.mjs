@@ -1,6 +1,6 @@
 /**
  * scripts/build-essai.mjs — construit l'installeur de la version D'ESSAI
- * (24h), séparément de la version vendue. Usage : npm run dist:essai
+ * (7 jours), séparément de la version vendue. Usage : npm run dist:essai
  * -----------------------------------------------------------------------
  * Repris à l'identique de BV-Calc (scripts/build-essai.mjs) : modifie
  * TEMPORAIREMENT package.json (main -> electron-main-essai.mjs, appId,
@@ -24,15 +24,15 @@ pkg.main = 'electron-main-essai.mjs';
 pkg.build = {
   ...pkg.build,
   appId: 'com.gradexsuite.app.essai',
-  productName: 'GRADEX Essai',
+  productName: 'HydroCrue Essai',
   directories: { output: 'dist-essai' },
-  nsis: { ...pkg.build.nsis, shortcutName: 'GRADEX Essai' },
+  nsis: { ...pkg.build.nsis, shortcutName: 'HydroCrue Essai' },
 };
 
 let echoue = false;
 try {
   fs.writeFileSync(CHEMIN_PKG, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
-  console.log("→ Construction de la version d'essai (electron-main-essai.mjs, verrouillage après 24h)…\n");
+  console.log("→ Construction de la version d'essai (electron-main-essai.mjs, verrouillage après 7 jours)…\n");
   execSync('electron-builder --win', { stdio: 'inherit', cwd: path.join(__dirname, '..') });
 } catch (e) {
   echoue = true;
@@ -43,4 +43,4 @@ try {
 }
 
 if (echoue) process.exit(1);
-console.log(`\n✅ Terminé : dossier dist-essai/ → "GRADEX Essai Setup ${pkg.version}.exe"`);
+console.log(`\n✅ Terminé : dossier dist-essai/ → "HydroCrue Essai Setup ${pkg.version}.exe"`);

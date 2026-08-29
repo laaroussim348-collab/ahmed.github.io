@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GRADEX — Gestionnaire de Licences</title>
+<title>HydroCrue — Gestionnaire de Licences</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M20 3 L35 30 A17 17 0 0 1 5 30 Z' fill='%2316283a'/%3E%3Cpath d='M12 24 Q20 17 28 24' fill='none' stroke='%231e7a72' stroke-width='2.6'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <!--
-  admin/licences-admin.html — Outil d'administration UNIFIÉ des licences GRADEX.
+  admin/licences-admin.html — Outil d'administration UNIFIÉ des licences HydroCrue.
   ─────────────────────────────────────────────────────────────────────────────
   Fusionne les deux outils d'origine (bv-calc-licences-admin.html, IDENTIFIANT
   MACHINE, et KeyGen_GRADEX.html, IP) sur UN SEUL schéma : l'Identifiant
   Machine de BV-Calc (SHA-256 des adresses MAC — beaucoup plus fiable qu'une
   IP, qui change et ne distingue pas 2 postes derrière le même routeur de
   bureau). C'est le même identifiant que produit obtenirMachineId() côté
-  serveur de GRADEX (src/services/machineId.js) et qu'affiche l'écran
+  serveur de HydroCrue (src/services/machineId.js) et qu'affiche l'écran
   d'activation (src/licence/LicenceGate.js).
 
   ⚠️ SÉCURITÉ — L'URL Google Apps Script ci-dessous (DEFAULT_GS_URL) est le
@@ -134,8 +134,8 @@ tr:hover td{background:var(--paper)}
       <path d="M12 24 Q20 17 28 24" fill="none" stroke="#1e7a72" stroke-width="2.6"/>
     </svg>
     <div>
-      <h1>GRADEX &mdash; Gestionnaire de Licences</h1>
-      <div class="sub">Contrôle d'activation &mdash; Identifiant Machine + Google Sheets (outil unifié BV-Calc + GRADEX)</div>
+      <h1>HydroCrue &mdash; Gestionnaire de Licences</h1>
+      <div class="sub">Contrôle d'activation &mdash; Identifiant Machine + Google Sheets (outil unifié BV-Calc + HydroCrue)</div>
     </div>
   </div>
   <div class="badge">v1 &mdash; En ligne</div>
@@ -179,7 +179,7 @@ tr:hover td{background:var(--paper)}
           <label>💻 Identifiant Machine du poste client</label>
           <input type="text" id="machineIdInput" placeholder="Ex: 4F2A-9B10-EE31-0C7D"
             oninput="this.value=this.value.replace(/[^0-9A-Fa-f-]/g,'').toUpperCase()">
-          <small>Le client voit cet identifiant sur l'écran d'activation de GRADEX, avec un bouton Copier.</small>
+          <small>Le client voit cet identifiant sur l'écran d'activation de HydroCrue, avec un bouton Copier.</small>
         </div>
 
         <div class="field">
@@ -250,7 +250,7 @@ tr:hover td{background:var(--paper)}
         <div class="panel-bd">
           <div class="steps">
             <div class="step"><div class="step-num">1</div>
-              <div class="step-txt">Le client lance <b>GRADEX</b> (application de bureau) → l'écran d'activation affiche son <b>Identifiant Machine</b> en grand, avec un bouton Copier.</div>
+              <div class="step-txt">Le client lance <b>HydroCrue</b> (application de bureau) → l'écran d'activation affiche son <b>Identifiant Machine</b> en grand, avec un bouton Copier.</div>
             </div>
             <div class="step"><div class="step-num">2</div>
               <div class="step-txt">Il vous envoie cet identifiant (ex : <code>4F2A-9B10-EE31-0C7D</code>). Collez-le dans le champ Identifiant Machine ci-contre.</div>
@@ -265,17 +265,17 @@ tr:hover td{background:var(--paper)}
               <div class="step-txt">Envoyez le code au client → il l'entre sur l'écran d'activation → <b>Activer ce poste</b>.</div>
             </div>
             <div class="step"><div class="step-num">6</div>
-              <div class="step-txt">Pour bloquer : cliquez <b>Révoquer</b>. Le blocage prend effet au <b>prochain contrôle</b> de GRADEX sur ce poste (contrôle toutes les 60s si le poste est ouvert ; jusqu'à 7 jours de grâce si le poste était hors-ligne).</div>
+              <div class="step-txt">Pour bloquer : cliquez <b>Révoquer</b>. Le blocage prend effet au <b>prochain contrôle</b> de HydroCrue sur ce poste (contrôle toutes les 60s si le poste est ouvert ; jusqu'à 7 jours de grâce si le poste était hors-ligne).</div>
             </div>
           </div>
         </div>
       </div>
 
       <div class="panel">
-        <div class="panel-hd">⏱ Version d'essai 24h</div>
+        <div class="panel-hd">⏱ Version d'essai 7 jours</div>
         <div class="panel-bd" style="font-size:12px;line-height:1.8;color:var(--ink-soft)">
-          La build d'essai (<code>npm run dist:essai</code>, voir README du projet GRADEX) ne passe <b>jamais</b> par
-          ce gestionnaire de licences : elle s'auto-active 24h à partir du premier lancement, sans code ni compte
+          La build d'essai (<code>npm run dist:essai</code>, voir README du projet HydroCrue) ne passe <b>jamais</b> par
+          ce gestionnaire de licences : elle s'auto-active 7 jours à partir du premier lancement, sans code ni compte
           Google Sheets, puis se verrouille définitivement. Utilisez cet outil uniquement pour la version vendue
           (licence par code).
         </div>
@@ -309,14 +309,14 @@ tr:hover td{background:var(--paper)}
 
       <div class="warn">
         <b>Prérequis :</b> un compte Google (Gmail). Tout est gratuit.
-        Le script Google Apps Script sert de serveur de vérification pour GRADEX (routes appelées par
+        Le script Google Apps Script sert de serveur de vérification pour HydroCrue (routes appelées par
         <code>src/services/licenseClient.js</code>, exactement comme pour BV-Calc — ce mécanisme n'a pas changé).
       </div>
 
       <b>Étape 1 — Créer le Google Sheet</b>
       <ol style="margin:8px 0 14px 18px">
         <li>Ouvrez <a href="https://sheets.google.com" target="_blank" style="color:var(--water-dark)">sheets.google.com</a> → Nouveau classeur</li>
-        <li>Nommez-le <b>GRADEX_Licences</b></li>
+        <li>Nommez-le <b>HydroCrue_Licences</b></li>
         <li>En ligne 1, créez ces colonnes exactement :
           <code style="display:block;background:var(--paper);padding:6px 10px;border-radius:3px;font-size:11px;margin:6px 0">
             A: code &nbsp;&nbsp; B: machineId &nbsp;&nbsp; C: client &nbsp;&nbsp; D: days &nbsp;&nbsp; E: status &nbsp;&nbsp; F: createdAt &nbsp;&nbsp; G: note
@@ -346,7 +346,7 @@ function doGet(e) {
   const sheet  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
   const data   = sheet.getDataRange().getValues();
 
-  // ── VERIFY : appelé par GRADEX à chaque démarrage puis toutes les 60s. Aucune clé requise. ──
+  // ── VERIFY : appelé par HydroCrue à chaque démarrage puis toutes les 60s. Aucune clé requise. ──
   // Si machineId est vide (vérification manuelle depuis l'outil admin), le
   // contrôle de correspondance machine est ignoré et seul le statut brut du
   // code est renvoyé.
@@ -432,19 +432,19 @@ function out(obj) {
         <li>Cliquez <b>Déployer → Nouveau déploiement</b></li>
         <li>Type : <b>Application Web</b></li>
         <li>Exécuter en tant que : <b>Moi</b></li>
-        <li>Qui a accès : <b>Tout le monde</b> (nécessaire pour que GRADEX puisse vérifier)</li>
+        <li>Qui a accès : <b>Tout le monde</b> (nécessaire pour que HydroCrue puisse vérifier)</li>
         <li>Cliquez <b>Déployer</b> → autorisez les permissions demandées</li>
         <li>Copiez l'URL affichée (commence par <code>https://script.google.com/macros/s/</code>) et collez-la dans le champ <b>URL Google Apps Script</b> en haut de cette page</li>
       </ol>
 
-      <b>Étape 4 — Configurer chaque copie de GRADEX distribuée</b>
+      <b>Étape 4 — Configurer chaque copie de HydroCrue distribuée</b>
       <ol style="margin:8px 0 14px 18px">
-        <li>Dans le projet GRADEX, ouvrez le fichier <code>license-config.json</code> (à la racine) et vérifiez que <code>licenseServerUrl</code> contient bien la même URL que ci-dessus</li>
+        <li>Dans le projet HydroCrue, ouvrez le fichier <code>license-config.json</code> (à la racine) et vérifiez que <code>licenseServerUrl</code> contient bien la même URL que ci-dessus</li>
         <li>Ce fichier fait partie des sources livrées à chaque client (embarqué dans l'archive .asar Electron) — la même URL est utilisée pour tous les postes, seul l'Identifiant Machine change</li>
       </ol>
 
       <div class="info">
-        ✓ Une fois configuré : chaque démarrage de GRADEX (et chaque contrôle périodique, toutes les 60s) contacte
+        ✓ Une fois configuré : chaque démarrage de HydroCrue (et chaque contrôle périodique, toutes les 60s) contacte
         votre Google Sheet. Si vous modifiez le code du script après un premier déploiement, utilisez
         <b>Déployer → Gérer les déploiements → ✏️ → Nouvelle version</b> pour que les changements prennent effet
         (l'URL reste la même). En cas de coupure réseau, le poste client garde l'accès <b>jusqu'à 7 jours</b> depuis
@@ -473,7 +473,7 @@ const DB_KEY  = "gradex_lic_db_v1";
 const CFG_KEY = "gradex_lic_cfg_v1";
 // Volontairement VIDES (voir avertissement de sécurité en tête de page) :
 // déployez votre propre script + choisissez votre propre clé avant de
-// distribuer GRADEX. Ne pas réutiliser les valeurs des anciens outils
+// distribuer HydroCrue. Ne pas réutiliser les valeurs des anciens outils
 // BV-Calc / GRADEX.
 const DEFAULT_GS_URL = "https://script.google.com/macros/s/AKfycbxdXrHXBucUZvmwXU2BchlDlof6HRtQWc-CE8uUdAKCPdL4yfl1tVryxY_96Gr5tb1z/exec";
 const DEFAULT_ADMIN_KEY = "";

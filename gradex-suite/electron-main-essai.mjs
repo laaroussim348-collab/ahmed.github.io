@@ -1,10 +1,10 @@
 /**
- * electron-main-essai.mjs — point d'entrée de la version D'ESSAI (24h).
+ * electron-main-essai.mjs — point d'entrée de la version D'ESSAI (HydroCrue, 7 jours).
  * -----------------------------------------------------------------------
  * Copie de electron-main.mjs, avec une seule différence fonctionnelle :
  * GRADEX_MODE=essai est défini AVANT d'importer server.mjs, ce qui fait que
- * server.mjs charge src/services/trialClient.js (essai 24h, sans code, sans
- * internet) au lieu de src/services/licenseClient.js (licence par code +
+ * server.mjs charge src/services/trialClient.js (essai 7 jours, sans code,
+ * sans internet) au lieu de src/services/licenseClient.js (licence par code +
  * Google Sheets) — voir server.mjs pour le détail du branchement. Repris à
  * l'identique de BV-Calc (electron-main-essai.mjs).
  *
@@ -35,7 +35,7 @@ function creerFenetre() {
     height: 920,
     minWidth: 1024,
     minHeight: 700,
-    title: 'GRADEX — Essai 24h',
+    title: 'HydroCrue — Essai 7 jours',
     icon: path.join(__dirname, 'build-resources', 'icon.png'),
     backgroundColor: '#e8e8e8',
     webPreferences: {
