@@ -26,13 +26,13 @@
   connexion, statut (essai/actif/en attente/révoqué). Rien d'autre n'est
   collecté ni affiché ici.
 
-  ⚠️ SÉCURITÉ — L'URL Google Apps Script ci-dessous (DEFAULT_GS_URL) et la
-  clé d'administration (ADMIN_KEY) sont pré-remplies pour ce déploiement.
-  Cette clé est visible par quiconque peut lire ce dépôt : si ce dépôt
-  GitHub est PUBLIC, changez ADMIN_KEY pour une valeur longue et
-  imprévisible (pas un simple code à 6 chiffres), aussi bien ici que dans
-  le script déployé (panneau Configuration en bas de page), sans quoi
-  n'importe qui connaissant l'URL peut activer/révoquer des postes.
+  ⚠️ SÉCURITÉ — L'URL Google Apps Script ci-dessous (DEFAULT_GS_URL) est le
+  déploiement propre à ce produit. La clé d'administration N'EST PAS
+  pré-remplie (jamais stockée dans ce dépôt, qui est public sur GitHub
+  Pages) : saisissez-la manuellement dans le champ "Clé d'administration"
+  — elle doit être identique à ADMIN_KEY dans le script déployé (panneau
+  Configuration en bas de page). Choisissez une clé longue et
+  imprévisible, pas un simple code à 6 chiffres.
 -->
 <style>
 :root{
@@ -399,7 +399,11 @@ const CFG_KEY = "gradex_lic_cfg_v2";
 // déployez votre propre script + choisissez votre propre clé avant de
 // distribuer HydroCrue.
 const DEFAULT_GS_URL = "https://script.google.com/macros/s/AKfycbyk1pr-0uaH5EUe9bBuoqJN6fTp4ZBxtEMJjLNBxw7U0Sc5vfz_f_R0fI9W_lQwKYZknw/exec";
-const DEFAULT_ADMIN_KEY = "150604";
+// La clé n'est PAS mise ici : ce fichier est sur un dépôt public GitHub Pages.
+// Saisissez-la manuellement dans le champ "Clé d'administration" ci-dessus —
+// elle est alors sauvegardée uniquement dans le navigateur (localStorage),
+// jamais sur GitHub.
+const DEFAULT_ADMIN_KEY = "";
 let cfg = { gsUrl:"", adminKey:"" };
 let rows = [];
 
