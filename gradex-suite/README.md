@@ -20,10 +20,10 @@ d'assainissement routier 2020*), en un seul logiciel de bureau (Electron).
   plus bas) **+** BV-Calc (7 méthodes de débit de pointe, temps de
   concentration, CN, Cr, délimitation automatique, pluviométrie NASA POWER —
   formules copiées à l'identique, aucune formule modifiée).
-- **Licence** : celle de BV-Calc (Identifiant Machine + Google Sheets,
-  tolérance hors-ligne de 7 jours) **+** un mode essai autonome de 7 jours
-  (porté de 24h à 7 jours le 29/08/2026), remplaçant l'ancien système IP de
-  GRADEX.
+- **Licence** : modèle UNIFIÉ essai + licence (façon AutoCAD, voir
+  "Licences" plus bas) — un seul build, essai gratuit automatique de 3
+  jours, puis activation à distance par l'éditeur (Identifiant Machine,
+  Google Sheets), sans code à saisir.
 - **Langues** : FR / AR (RTL) / EN / ES — système de traduction de BV-Calc,
   étendu à toute l'interface, avec correction des quelques messages de
   BV-Calc qui n'étaient en réalité jamais traduits (voir plus bas).
@@ -64,36 +64,57 @@ ils doivent rester à 23/23) :
 npm test
 ```
 
-## Construire les installeurs Windows
+## Construire l'installeur Windows
 
 ```bash
-npm run dist          # version vendue (licence par code) -> dist/
-npm run dist:essai     # version d'essai 7 jours, sans code -> dist-essai/
+npm run dist          # un seul build, essai + licence -> dist/
 ```
 
-Les deux versions s'installent l'une à côté de l'autre (noms, dossiers et
-raccourcis distincts — voir `scripts/build-essai.mjs`).
+Il n'existe plus qu'**un seul installeur** (voir "Licences" ci-dessous) —
+l'ancienne version d'essai séparée (`npm run dist:essai`) a été retirée.
 
-## Licences — configuration (obligatoire avant toute distribution)
+## Licences — modèle unifié essai + activation à distance (façon AutoCAD)
 
-1. Ouvrez `admin/licences-admin.html` dans un navigateur — l'URL du Google
-   Apps Script est déjà pré-remplie (`license-config.json` et
-   `DEFAULT_GS_URL` pointent vers le déploiement de l'éditeur).
-2. Saisissez votre **clé d'administration** dans le champ dédié de l'outil
-   admin (elle doit être identique à `ADMIN_KEY` dans le script déployé —
-   voir le panneau **Configuration** en bas de page pour la retrouver ou en
-   définir une nouvelle).
+Depuis le 29/08/2026, HydroCrue utilise un modèle d'activation unique, sans
+code, porté par `src/services/activationClient.js` (côté client) et par le
+script Google Apps Script déployé (côté serveur — voir
+`admin/licences-admin.html`, panneau Configuration, pour le script complet
+et les instructions de déploiement) :
+
+1. **Premier lancement** : le poste s'enregistre automatiquement auprès du
+   serveur de licence par son **Identifiant Machine** (SHA-256 des adresses
+   MAC) — aucune saisie, aucun compte. Un essai gratuit de **3 jours**
+   démarre (`DUREE_ESSAI_HEURES = 72` dans `activationClient.js` — à garder
+   identique à `TRIAL_HEURES` dans le script Apps Script).
+2. **Passé ce délai**, le poste passe "en attente de paiement" : l'écran
+   affiche l'Identifiant Machine et invite l'utilisateur à contacter
+   l'éditeur — il n'y a rien d'autre à faire de son côté.
+3. **Ouvrez `admin/licences-admin.html`** dans un navigateur — c'est la
+   "plateforme" : elle liste tous les postes enregistrés (Identifiant
+   Machine, première/dernière connexion, statut essai/en attente/actif),
+   sans aucune autre information (pas de télémétrie au-delà de la licence).
+   Saisissez votre **URL Google Apps Script** et votre **clé
+   d'administration** (identique à `ADMIN_KEY` dans le script déployé —
+   voir le panneau **Configuration** en bas de page pour le script à coller
+   et les instructions de déploiement complètes) puis cliquez **Actualiser**.
+4. **Une fois le paiement reçu**, cliquez **✅ Activer** en face de la ligne
+   du client (retrouvable par son Identifiant Machine, qu'il vous aura
+   communiqué, ou par sa date de première connexion) — **aucun code à lui
+   transmettre**. Son application se débloque automatiquement au prochain
+   contrôle (toutes les 60s si elle est ouverte).
+5. **Pour bloquer un poste** : cliquez **⛔ Révoquer**. Effet au prochain
+   contrôle (jusqu'à 7 jours de grâce si le poste était hors-ligne).
 
 > ⚠️ **La clé d'administration n'est jamais commitée dans ce dépôt** — elle
 > reste uniquement dans le stockage local de votre navigateur une fois
-> saisie dans l'outil admin. Les identifiants des anciens outils BV-Calc /
-> GRADEX (distincts de ceux ci-dessus) ne doivent jamais être réutilisés
-> pour ce produit fusionné.
+> saisie dans l'outil admin.
 
-Le mode essai (`npm run dist:essai`) ne passe jamais par ce système : il
-s'auto-active dès le premier lancement, sans code ni connexion, pendant
-7 jours, puis se verrouille définitivement (voir
-`src/services/trialClient.js`, `DUREE_ESSAI_HEURES`).
+> ⚠️ **Changement de modèle (29/08/2026)** : ce système remplace l'ancien
+> système à codes d'activation de BV-Calc/GRADEX. Si des clients avaient déjà
+> reçu un code avec l'ancienne version, celui-ci n'est plus reconnu par le
+> nouveau script Apps Script — ils réapparaîtront automatiquement dans la
+> plateforme (en essai, ou directement activables) dès leur prochain
+> lancement d'une version mise à jour.
 
 ## Architecture
 
@@ -106,8 +127,9 @@ src/
                           réutilisées par le nouvel onglet BV-Calc pour que
                           tout l'habillage reste cohérent.
   i18n.js / useI18n.js    Dictionnaire FR/AR/EN/ES (base = BV-Calc, étendu).
-  licence/LicenceGate.js  Écran d'activation : visuel GRADEX, logique
-                          BV-Calc (Identifiant Machine, essai 7 jours).
+  licence/LicenceGate.js  Écran d'activation : visuel GRADEX, modèle
+                          unifié essai + licence (Identifiant Machine,
+                          aucun code — voir activationClient.js).
   tabs/LocalisationDelimitation.js  "Localisation & calcul automatique" —
                           rendu en tout premier dans l'onglet fusionné
                           (App.js), extrait de MethodesTab.js pour que la
@@ -118,16 +140,23 @@ src/
                           dans l'habillage GRADEX.
   calculations/, data/    Moteur de calcul BV-Calc — copié À L'IDENTIQUE
                           (aucune formule modifiée), voir tests/.
-  services/               Licence (machineId/licenseClient/trialClient),
-                          délimitation (mghydro.com), pluviométrie (NASA
-                          POWER) — copiés à l'identique de BV-Calc.
-server.mjs                Sert build/ (interface compilée) + API de licence
-                          et proxys réseau (délimitation, pluviométrie) —
-                          repris de BV-Calc, adapté pour servir build/.
-electron-main.mjs          Version vendue (licence par code).
-electron-main-essai.mjs    Version d'essai (7 jours, build séparée).
-admin/licences-admin.html  Outil d'administration unifié (fusion des deux
-                          outils d'origine, schéma Identifiant Machine).
+  services/activationClient.js  Modèle UNIFIÉ essai + licence (remplace les
+                          anciens licenseClient.js/trialClient.js) —
+                          Identifiant Machine, enregistrement/essai
+                          automatique, activation à distance sans code.
+  services/               machineId, délimitation (mghydro.com),
+                          pluviométrie (NASA POWER) — copiés à l'identique
+                          de BV-Calc.
+server.mjs                Sert build/ (interface compilée) + API
+                          d'activation et proxys réseau (délimitation,
+                          pluviométrie) — repris de BV-Calc, adapté pour
+                          servir build/.
+electron-main.mjs          Point d'entrée UNIQUE (essai + licence, plus de
+                          build séparée).
+admin/licences-admin.html  Plateforme d'administration : liste des postes
+                          enregistrés (essai/en attente/actif), activation
+                          à distance par Identifiant Machine (un clic, sans
+                          code) — voir "Licences" plus haut.
 ```
 
 ### Pourquoi des fichiers `.mjs` à la racine ?
@@ -138,8 +167,8 @@ importable à la fois par React/Webpack (côté interface) et par Node
 modules. Node et Webpack ne s'accordent pas sur la présence de
 `"type": "module"` dans le `package.json` racine (Webpack, lui, veut pouvoir
 importer `./App` sans extension). Solution : les scripts Node (`server.mjs`,
-`electron-main*.mjs`, `scripts/build-essai.mjs`) sont explicitement en
-ESM via l'extension `.mjs`, et chaque dossier du moteur de calcul
+`electron-main.mjs`) sont explicitement en ESM via l'extension `.mjs`, et
+chaque dossier du moteur de calcul
 (`src/calculations/`, `src/data/`, `src/services/`, `tests/`) porte son
 propre petit `package.json` `{"type":"module"}`. React/Webpack, lui,
 continue de résoudre les imports du dossier `src/` normalement (sans
@@ -249,20 +278,31 @@ manuellement).
   l'avertissement "surface hors plage usuelle" reformulé pour ne plus
   laisser croire à un rejet (le calcul est toujours effectué).
 - **Essai** : mécanisme vérifié, fonctionne comme prévu (verrouillage strict
-  après le tout premier lancement, persistant dans `.essai-local.json`) — un
-  essai qui "ne marche plus" après une utilisation intensive prolongée est
-  le comportement attendu, pas un bug. Deux ajustements apportés (retour
-  utilisateur du 29/08/2026) : (1) durée portée de 24h à **7 jours**
-  (`DUREE_ESSAI_HEURES` dans `trialClient.js`), les anciens clients BV-Calc
-  avaient besoin de plus de temps pour évaluer la version fusionnée ; (2)
-  l'affichage du temps restant utilisait `Math.floor` (un essai qui vient de
+  après le tout premier lancement) — un essai qui "ne marche plus" après une
+  utilisation intensive prolongée est le comportement attendu, pas un bug.
+  L'affichage du temps restant utilisait `Math.floor` (un essai qui vient de
   démarrer affichait une unité déjà entamée, ex. "23 h" au lieu de "24 h")
   — remplacé par `Math.ceil` dans `LicenceGate.js`, et affiche désormais des
-  jours au-delà de 24h (ex. "7 j").
+  jours au-delà de 24h (ex. "3 j").
 - **Renommage** : le produit s'appelle désormais **HydroCrue** (au lieu de
   "GRADEX" seul), pour refléter la fusion avec BV-Calc — voir la note en
   tête de ce document. "GRADEX" reste utilisé partout où il désigne la
   méthode de Guillot & Duband elle-même (une méthode parmi 8 désormais).
+- **Icône** : remplacée par le jeu d'icônes fourni par l'éditeur (thème
+  "oued" — montagnes, rivière, ciel), aux tailles standard Windows (16 à
+  256px) — `build-resources/icon.ico`/`icon.png`, `public/favicon.ico`,
+  `public/logo192.png`, `public/logo512.png`.
+- **Licence — modèle unifié (29/08/2026)** : refonte complète du système de
+  licence, façon AutoCAD — un seul build (plus de version d'essai séparée),
+  essai gratuit automatique de 3 jours (porté de 24h, puis 7 jours, à 3
+  jours dans cette même itération), et **activation à distance sans code** :
+  chaque poste s'enregistre automatiquement par son Identifiant Machine ;
+  l'éditeur active depuis une plateforme (`admin/licences-admin.html`,
+  entièrement réécrite) d'un clic, sans que le client n'ait à envoyer ou
+  saisir quoi que ce soit. Voir la section "Licences" plus haut pour le
+  détail. `src/services/licenseClient.js` et `trialClient.js` sont
+  remplacés par `src/services/activationClient.js` ; `electron-main-essai.mjs`
+  et `scripts/build-essai.mjs` sont retirés.
 
 ## Corrections (retours utilisateur du 29/08/2026)
 

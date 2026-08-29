@@ -26,8 +26,7 @@
     "serve": "npm run build && node server.mjs",
     "electron": "electron .",
     "electron-dev": "concurrently \"cross-env BROWSER=none npm start\" \"wait-on http://localhost:3000 && electron .\"",
-    "dist": "npm run build && electron-builder --win",
-    "dist:essai": "npm run build && node scripts/build-essai.mjs"
+    "dist": "npm run build && electron-builder --win"
   },
   "eslintConfig": {
     "extends": [
@@ -64,7 +63,6 @@
     "productName": "HydroCrue",
     "files": [
       "electron-main.mjs",
-      "electron-main-essai.mjs",
       "server.mjs",
       "package.json",
       "build/**/*",

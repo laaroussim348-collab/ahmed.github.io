@@ -1,7 +1,7 @@
 node_modules/
 build/
 dist/
-dist-essai/
+.activation-local.json
 .license-local.json
 .essai-local.json
 *.log

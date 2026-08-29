@@ -25,17 +25,7 @@ import {
   parseWatershedResponse, parseRiversResponse, parseElevationResponse,
 } from './src/services/delineationClient.js';
 import { analyserDelimitation, finaliserCaracteristiques } from './src/services/watershedFromCoordinates.js';
-import * as licenceComplete from './src/services/licenseClient.js';
-import * as licenceEssai from './src/services/trialClient.js';
-
-// GRADEX_MODE=essai est défini par electron-main-essai.mjs (build d'essai
-// séparé, voir scripts/build-essai.mjs) AVANT que ce fichier ne soit importé.
-// Absent (build normal), on retombe sur la licence par code + Google Sheets
-// habituelle. Les 2 modules exposent exactement la même forme d'API
-// ({obtenirMachineId, activerAvecCode, verifierActivation}) donc tout le
-// reste de ce fichier n'a besoin d'AUCUNE autre modification.
-const MODE_ESSAI = process.env.GRADEX_MODE === 'essai';
-const { obtenirMachineId, activerAvecCode, verifierActivation } = MODE_ESSAI ? licenceEssai : licenceComplete;
+import { obtenirMachineId, activerAvecCode, verifierActivation } from './src/services/activationClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // build/ (sortie de `react-scripts build`) est embarqué dans l'app (archive
@@ -83,8 +73,10 @@ function sendJson(res, statusCode, obj) {
 // POST /api/activer  {code}   -> { ok, expiresAt } ou { ok:false, erreur }
 // ---------------------------------------------------------------------
 async function apiActivationStatus(res) {
+  // statut.essai est déjà positionné par activationClient.js (true en essai,
+  // absent une fois licencié) — plus de mode de build séparé à refléter ici.
   const statut = await verifierActivation();
-  sendJson(res, 200, { ...statut, essai: MODE_ESSAI });
+  sendJson(res, 200, statut);
 }
 function apiMachineId(res) {
   sendJson(res, 200, { machineId: obtenirMachineId() });

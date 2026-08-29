@@ -1,20 +1,17 @@
 // ============================================================
 //  LicenceGate.js — Écran d'activation de HydroCrue.
 //  ─────────────────────────────────────────────────────────────
-//  Visuellement : repris tel quel de l'écran d'activation original
-//  de GRADEX (dégradé bleu #185FA5/#0C447C, carte centrée, secousse
-//  sur erreur) — c'est ce qui fait que l'activation "ressemble à
-//  GRADEX".
-//  Fonctionnellement : repris du système de licence de BV-Calc —
-//  Identifiant Machine (et non IP), vérification via le serveur
-//  local (server.js -> src/services/licenseClient.js, Google
-//  Sheets + tolérance hors-ligne de 7 jours), ET prise en charge du
-//  mode ESSAI (7 jours — src/services/trialClient.js, DUREE_ESSAI_HEURES)
-//  qui affiche un badge et masque le formulaire de code (voir
-//  activation-status.essai).
-//  La vérification se répète toutes les 60s (comme public/js/
-//  activation.js de BV-Calc), pour verrouiller l'essai en direct
-//  sans attendre un redémarrage.
+//  Visuellement : repris de l'écran d'activation original de GRADEX
+//  (dégradé bleu #185FA5/#0C447C, carte centrée, secousse sur erreur).
+//  Fonctionnellement : modèle UNIFIÉ essai + licence (façon AutoCAD,
+//  voir src/services/activationClient.js) — AUCUN code à saisir ici.
+//  Le premier lancement démarre un essai gratuit automatiquement ;
+//  passé ce délai, l'écran affiche l'Identifiant Machine et invite à
+//  contacter l'éditeur, qui active le poste À DISTANCE depuis
+//  admin/licences-admin.html (clic "Activer" en face de l'Identifiant
+//  Machine — le client n'a jamais besoin d'entrer quoi que ce soit).
+//  La vérification se répète toutes les 60s : l'activation (ou une
+//  révocation) prend effet en direct, sans redémarrage.
 // ============================================================
 import { useState, useEffect, useCallback } from 'react';
 import { useI18n } from '../useI18n';
@@ -28,44 +25,30 @@ async function fetchMachineId() {
   const d = await r.json();
   return d.machineId || '';
 }
-async function postActiver(code) {
-  const r = await fetch('/api/activer', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
-  });
-  return r.json();
-}
 
 function formaterRestant(heures, t) {
   if (heures == null || Number.isNaN(heures)) return '';
   if (heures < 1) return `${Math.max(1, Math.round(heures * 60))} min`;
   // Math.ceil (pas floor) : un essai qui vient de démarrer affiche bien la
-  // durée pleine (ex. "7 j" / "24 h") et non une unité déjà entamée, ce qui
+  // durée pleine (ex. "3 j" / "24 h") et non une unité déjà entamée, ce qui
   // donnerait l'impression trompeuse que l'essai a démarré plus tôt.
   if (heures >= 24) return `${Math.ceil(heures / 24)} j`;
   return `${Math.ceil(heures)} h`;
 }
 
 export default function LicenceGate({ children }) {
-  const { t, langue, changerLangue, LANGUES, NOMS_LANGUES } = useI18n();
-  const [phase, setPhase] = useState('init'); // init -> checking -> form | blocked | valid
+  const { t, langue, changerLangue, LANGUES } = useI18n();
+  const [phase, setPhase] = useState('init'); // init -> checking -> blocked | valid
   const [machineId, setMachineId] = useState('');
-  const [code, setCode] = useState('');
   const [msg, setMsg] = useState({ text: '', ok: false });
-  const [busy, setBusy] = useState(false);
-  const [shake, setShake] = useState(false);
   const [statut, setStatut] = useState(null);
   const [showLogout, setShowLogout] = useState(false);
-
-  const doShake = useCallback(() => { setShake(true); setTimeout(() => setShake(false), 500); }, []);
+  const [recheck, setRecheck] = useState(false);
 
   const messagesBlocage = {
-    non_active: t('nonActive'),
     refuse_par_serveur: t('refuseParServeur'),
     serveur_injoignable_periode_grace_depassee: t('injoignableGrace'),
     essai_expire: t('essaiExpire'),
-    essai_horloge_invalide: t('essaiHorlogeInvalide'),
   };
 
   const verifier = useCallback(async () => {
@@ -77,7 +60,7 @@ export default function LicenceGate({ children }) {
         setPhase('valid');
       } else {
         setMsg({ text: messagesBlocage[s.raison] || s.raisonDetail || t('activationRequise'), ok: false });
-        setPhase(s.raison === 'non_active' ? 'form' : 'blocked');
+        setPhase('blocked');
       }
     } catch (e) {
       setPhase('blocked');
@@ -95,33 +78,18 @@ export default function LicenceGate({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Revérification périodique (60s, comme BV-Calc) : verrouille l'essai
-  // en direct, tient le badge à jour, et applique une révocation serveur
-  // sans attendre un redémarrage.
+  // Revérification périodique (60s) : verrouille l'essai en direct, tient
+  // le badge à jour, ET détecte une activation à distance par l'éditeur
+  // (ou une révocation) sans attendre un redémarrage côté client.
   useEffect(() => {
     const id = setInterval(verifier, 60000);
     return () => clearInterval(id);
   }, [verifier]);
 
-  async function handleActivate() {
-    const c = code.trim().toUpperCase();
-    if (!c) { setMsg({ text: t('collezCode'), ok: false }); doShake(); return; }
-    setBusy(true);
-    setMsg({ text: t('verifEnCours'), ok: false });
-    try {
-      const r = await postActiver(c);
-      if (r.ok) {
-        setMsg({ text: `✅ ${t('activeJusquau')} ${new Date(r.expiresAt).toLocaleDateString(langue === 'ar' ? 'ar' : langue)}.`, ok: true });
-        setTimeout(verifier, 700);
-      } else {
-        setMsg({ text: `❌ ${t('erreur')} ${r.erreur}`, ok: false });
-        doShake();
-      }
-    } catch (e) {
-      setMsg({ text: `❌ ${t('erreur')} ${e.message}`, ok: false });
-      doShake();
-    }
-    setBusy(false);
+  async function handleRecheck() {
+    setRecheck(true);
+    await verifier();
+    setRecheck(false);
   }
 
   function copierId() {
@@ -139,34 +107,7 @@ export default function LicenceGate({ children }) {
     </div>
   );
 
-  // ── Rendu : bloqué (révoqué / expiré / essai terminé) ────
-  if (phase === 'blocked') return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh',
-      background:'#f0f4f8', fontFamily:'Arial,sans-serif' }}>
-      <div style={{ background:'#fff', width:420, borderRadius:6, overflow:'hidden',
-        boxShadow:'0 4px 24px rgba(0,0,0,0.13)' }}>
-        <div style={{ background:'#8B1a1a', padding:'20px 24px', textAlign:'center' }}>
-          <div style={{ fontSize:22, fontWeight:700, color:'#fff' }}>⛔ HydroCrue</div>
-          <div style={{ fontSize:11, color:'#ffaaaa', marginTop:4 }}>{t('gxLicAccesRefuse')}</div>
-        </div>
-        <div style={{ padding:'24px', textAlign:'center' }}>
-          <div style={{ fontSize:13, color:'#333', lineHeight:1.7, marginBottom:12 }}>{msg.text}</div>
-          {machineId && (
-            <div style={{ fontFamily:"'Courier New',monospace", fontSize:12, color:'#888', marginBottom:16 }}>
-              {t('identifiantTitre')} : {machineId}
-            </div>
-          )}
-          <button onClick={() => setPhase('form')}
-            style={{ padding:'9px 24px', background:'#185FA5', color:'#fff', border:'none',
-              borderRadius:5, fontSize:13, cursor:'pointer', fontWeight:600 }}>
-            {t('gxLicNouveauCode')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  // ── Rendu : valide → app + bouton licence flottant ──────
+  // ── Rendu : valide → app + bandeau essai / bouton licence flottant ──
   if (phase === 'valid') return (
     <>
       {children}
@@ -208,12 +149,13 @@ export default function LicenceGate({ children }) {
     </>
   );
 
-  // ── Rendu : formulaire d'activation ──────────────────────
+  // ── Rendu : bloqué (essai terminé / révoqué / grâce dépassée) ──
+  // Plus de formulaire de code : l'Identifiant Machine suffit — l'éditeur
+  // active le poste à distance depuis l'outil admin, sans rien à saisir ici.
   return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh',
       background:'#f0f4f8', fontFamily:'Arial,sans-serif' }}>
-      <div style={{ background:'#fff', width:440, borderRadius:6, boxShadow:'0 4px 24px rgba(0,0,0,0.13)',
-        overflow:'hidden', animation: shake ? 'shakeLic 0.45s' : 'none' }}>
+      <div style={{ background:'#fff', width:440, borderRadius:6, boxShadow:'0 4px 24px rgba(0,0,0,0.13)', overflow:'hidden' }}>
 
         <div style={{ background:'linear-gradient(135deg,#185FA5 0%,#0C447C 100%)', padding:'22px 24px', textAlign:'center' }}>
           <div style={{ display:'flex', gap:6, justifyContent:'center', marginBottom:12 }}>
@@ -227,11 +169,18 @@ export default function LicenceGate({ children }) {
               </button>
             ))}
           </div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#fff', letterSpacing:1 }}>HydroCrue</div>
-          <div style={{ fontSize:11, color:'#a0d0ff', marginTop:4 }}>{t('gxLicSousTitre')}</div>
+          <div style={{ fontSize:26, fontWeight:700, color:'#fff', letterSpacing:1 }}>⛔ HydroCrue</div>
+          <div style={{ fontSize:11, color:'#a0d0ff', marginTop:4 }}>{t('gxLicAccesRefuse')}</div>
         </div>
 
         <div style={{ padding:'24px' }}>
+          {msg.text && (
+            <div style={{ padding:'10px 14px', borderRadius:5, marginBottom:16, fontSize:12.5, lineHeight:1.7,
+              background:'#fff5f5', color:'#991b1b', border:'1px solid #fecaca', textAlign:'center' }}>
+              {msg.text}
+            </div>
+          )}
+
           <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:5, padding:'12px 14px', marginBottom:16 }}>
             <div style={{ fontSize:11, fontWeight:700, color:'#1e40af', marginBottom:6 }}>
               🖥️ {t('identifiantTitre')}
@@ -249,63 +198,22 @@ export default function LicenceGate({ children }) {
                 </button>
               )}
             </div>
-            <div style={{ fontSize:10, color:'#6b7280', marginTop:6, lineHeight:1.5 }}>{t('identifiantDesc')}</div>
+            <div style={{ fontSize:10, color:'#6b7280', marginTop:6, lineHeight:1.5 }}>{t('gxLicContacterHint')}</div>
           </div>
 
-          {!statut?.essai && (
-            <>
-              <div style={{ marginBottom:10 }}>
-                <label style={{ display:'block', fontSize:11, fontWeight:600, color:'#374151', marginBottom:5 }}>
-                  {t('codeTitre')}
-                </label>
-                <input value={code}
-                  onChange={e => { setCode(e.target.value.toUpperCase()); setMsg({ text:'', ok:false }); }}
-                  onKeyDown={e => e.key === 'Enter' && !busy && handleActivate()}
-                  placeholder="GDX-XXXXXX-XXXXXX" spellCheck={false} autoComplete="off"
-                  style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px',
-                    border:`1.5px solid ${msg.text && !msg.ok ? '#dc2626' : '#d1d5db'}`, borderRadius:5, fontSize:13,
-                    fontFamily:"'Courier New',monospace", letterSpacing:1, textAlign:'center', outline:'none',
-                    transition:'border 0.2s' }} />
-              </div>
-
-              {msg.text && (
-                <div style={{ padding:'9px 12px', borderRadius:4, marginBottom:12, fontSize:12, lineHeight:1.6,
-                  background: msg.ok ? '#f0fff4' : '#fff5f5', color: msg.ok ? '#065f46' : '#991b1b',
-                  border:`1px solid ${msg.ok ? '#a7f3d0' : '#fecaca'}` }}>
-                  {msg.text}
-                </div>
-              )}
-
-              <button onClick={handleActivate} disabled={busy || !code.trim()}
-                style={{ width:'100%', padding:'11px', fontWeight:700, fontSize:14, border:'none', borderRadius:5,
-                  cursor: busy || !code.trim() ? 'not-allowed' : 'pointer',
-                  background: busy || !code.trim() ? '#9ca3af' : '#185FA5', color:'#fff',
-                  transition:'background 0.2s', marginBottom:14 }}>
-                {busy ? t('verifEnCours') : t('activerBouton')}
-              </button>
-            </>
-          )}
-
-          {statut?.essai && msg.text && (
-            <div style={{ padding:'9px 12px', borderRadius:4, marginBottom:12, fontSize:12, lineHeight:1.6,
-              background:'#fff5f5', color:'#991b1b', border:'1px solid #fecaca' }}>
-              {msg.text}
-            </div>
-          )}
+          <button onClick={handleRecheck} disabled={recheck}
+            style={{ width:'100%', padding:'11px', fontWeight:700, fontSize:13, border:'none', borderRadius:5,
+              cursor: recheck ? 'not-allowed' : 'pointer',
+              background: recheck ? '#9ca3af' : '#185FA5', color:'#fff',
+              transition:'background 0.2s', marginBottom:14 }}>
+            {recheck ? t('verifEnCours') : t('gxLicVerifierMaintenant')}
+          </button>
 
           <div style={{ textAlign:'center', fontSize:10, color:'#9ca3af', borderTop:'1px solid #f3f4f6', paddingTop:10 }}>
             {t('gxLicNonTransferable')}
           </div>
         </div>
       </div>
-
-      <style>{`
-        @keyframes shakeLic {
-          0%,100%{transform:translateX(0)}
-          20%,60%{transform:translateX(-8px)}
-          40%,80%{transform:translateX(8px)}
-        }
-      `}</style>
     </div>
   );
 }

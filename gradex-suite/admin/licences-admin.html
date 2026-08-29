@@ -3,29 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HydroCrue — Gestionnaire de Licences</title>
+<title>HydroCrue — Plateforme de Licences</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M20 3 L35 30 A17 17 0 0 1 5 30 Z' fill='%2316283a'/%3E%3Cpath d='M12 24 Q20 17 28 24' fill='none' stroke='%231e7a72' stroke-width='2.6'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <!--
-  admin/licences-admin.html — Outil d'administration UNIFIÉ des licences HydroCrue.
+  admin/licences-admin.html — Plateforme d'administration des activations HydroCrue.
   ─────────────────────────────────────────────────────────────────────────────
-  Fusionne les deux outils d'origine (bv-calc-licences-admin.html, IDENTIFIANT
-  MACHINE, et KeyGen_GRADEX.html, IP) sur UN SEUL schéma : l'Identifiant
-  Machine de BV-Calc (SHA-256 des adresses MAC — beaucoup plus fiable qu'une
-  IP, qui change et ne distingue pas 2 postes derrière le même routeur de
-  bureau). C'est le même identifiant que produit obtenirMachineId() côté
-  serveur de HydroCrue (src/services/machineId.js) et qu'affiche l'écran
-  d'activation (src/licence/LicenceGate.js).
+  MODÈLE UNIFIÉ (essai + licence, façon AutoCAD — retour utilisateur du
+  29/08/2026) : un seul build, aucun code d'activation. Chaque poste
+  s'enregistre AUTOMATIQUEMENT (par son Identifiant Machine — SHA-256 des
+  adresses MAC, voir src/services/machineId.js) dès son premier lancement,
+  avec un essai gratuit limité (TRIAL_HEURES dans le script Apps Script,
+  DOIT rester identique à DUREE_ESSAI_HEURES dans
+  src/services/activationClient.js). Passé ce délai, le poste apparaît ici
+  "En attente" — l'éditeur clique "Activer" en face de son Identifiant
+  Machine, SANS que le client n'ait à envoyer ou saisir quoi que ce soit
+  (l'appli se débloque automatiquement au prochain contrôle, toutes les 60s).
+
+  Volontairement AUCUNE télémétrie au-delà de ce qui est strictement
+  nécessaire à la licence : Identifiant Machine, première/dernière
+  connexion, statut (essai/actif/en attente/révoqué). Rien d'autre n'est
+  collecté ni affiché ici.
 
   ⚠️ SÉCURITÉ — L'URL Google Apps Script ci-dessous (DEFAULT_GS_URL) est le
-  déploiement propre à ce produit, fourni par l'éditeur. La clé
-  d'administration N'EST PAS pré-remplie (elle n'est jamais stockée dans ce
-  dépôt) : saisissez-la manuellement dans le champ "Clé d'administration" —
-  elle doit être identique à ADMIN_KEY dans le script déployé. Les valeurs
-  par défaut des anciens outils BV-Calc / GRADEX ne doivent JAMAIS être
-  réutilisées pour ce produit fusionné (elles restent valables uniquement
-  pour les clients déjà activés sur ces anciens produits).
+  déploiement propre à ce produit. La clé d'administration N'EST PAS
+  pré-remplie (jamais stockée dans ce dépôt) : saisissez-la manuellement
+  dans le champ "Clé d'administration" — elle doit être identique à
+  ADMIN_KEY dans le script déployé (panneau Configuration en bas de page).
 -->
 <style>
 :root{
@@ -75,12 +80,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--water);b
 .btn-ghost{background:none;border-color:var(--line-strong);color:var(--ink-soft)}.btn-ghost:hover:not(:disabled){border-color:var(--water);color:var(--water-dark)}
 .btn-sm{padding:5px 11px;font-size:11px}
 .btn-full{width:100%;justify-content:center;padding:11px}
-.code-box{background:var(--water-tint);border:1px solid var(--water);border-radius:var(--radius);padding:14px 50px 14px 14px;
-  font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--water-dark);word-break:break-all;
-  text-align:center;position:relative;letter-spacing:.5px;margin:12px 0}
-.code-copy{position:absolute;top:8px;right:8px;background:var(--water);color:#fff;border:none;
-  padding:4px 10px;border-radius:var(--radius);font-size:10px;cursor:pointer;font-family:inherit}
-.code-copy:hover{background:var(--water-dark)}
 .info{background:var(--ok-tint);border:1px solid #b7d9c6;border-radius:var(--radius);padding:10px 12px;
   font-size:11.5px;color:var(--ok);margin-bottom:12px;line-height:1.7}
 .warn{background:var(--warn-tint);border:1px solid #e8c397;border-radius:var(--radius);padding:10px 12px;
@@ -93,36 +92,36 @@ th{background:var(--paper);padding:9px 10px;text-align:left;font-weight:600;colo
   border-bottom:2px solid var(--line);white-space:nowrap;text-transform:uppercase;font-size:10px;letter-spacing:.04em}
 td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
 tr:hover td{background:var(--paper)}
+tr.row-pending td{background:var(--warn-tint)}
+tr.row-pending:hover td{background:#f5e2c4}
 .mono{font-family:var(--font-mono);font-size:10.5px}
 .badge2{padding:2px 9px;border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap}
 .b-act{background:var(--ok-tint);color:var(--ok)}
 .b-rev{background:var(--error-tint);color:var(--error)}
-.b-exp{background:var(--warn-tint);color:var(--warn)}
-.b-ina{background:var(--paper);color:var(--ink-soft);border:1px solid var(--line)}
+.b-trial{background:var(--water-tint);color:var(--water-dark)}
+.b-pend{background:var(--warn-tint);color:var(--warn)}
 .actions{display:flex;gap:4px;flex-wrap:wrap}
 .empty{text-align:center;padding:40px;color:#9aa5af;font-size:13px}
-.modal-bg{display:none;position:fixed;inset:0;background:rgba(22,40,58,.55);align-items:center;justify-content:center;z-index:1000}
-.modal-bg.show{display:flex}
-.modal{background:#fff;border-radius:6px;padding:26px;max-width:440px;width:92%;box-shadow:0 20px 60px rgba(22,40,58,.3)}
-.modal h3{margin-bottom:10px;font-size:16px}
-.modal p{font-size:13px;color:var(--ink-soft);line-height:1.7;margin-bottom:16px}
-.modal-btns{display:flex;gap:8px;justify-content:flex-end}
+.toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.chk{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-soft);font-weight:600;cursor:pointer}
+.chk input{width:auto}
+.gs-box{background:var(--contour-tint);border:1px solid #d3b98a;border-radius:var(--radius);padding:12px;margin-bottom:14px}
+.gs-box label{color:var(--contour);margin-bottom:5px}
+.gs-box input{border-color:#d3b98a;font-family:var(--font-mono);font-size:11px}
+.gs-box .field{margin-bottom:10px}
+.gs-box .field:last-child{margin-bottom:0}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);
+  color:#fff;padding:10px 22px;border-radius:6px;font-size:12px;z-index:9999;
+  animation:fadeUp .3s;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+@keyframes fadeUp{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
 .steps .step{display:flex;gap:12px;margin-bottom:14px;align-items:flex-start}
 .step-num{background:var(--water);color:#fff;border-radius:50%;width:24px;height:24px;
   display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:1px;font-family:var(--font-mono)}
 .step-txt{font-size:12px;line-height:1.7;color:var(--ink-soft)}
 .step-txt b{color:var(--ink)}
 .step-txt code{background:var(--paper);padding:1px 6px;border-radius:3px;font-family:var(--font-mono);font-size:11px;color:var(--water-dark)}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);
-  color:#fff;padding:10px 22px;border-radius:6px;font-size:12px;z-index:9999;
-  animation:fadeUp .3s;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.25)}
-@keyframes fadeUp{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
-.toolbar{display:flex;gap:7px;flex-wrap:wrap}
-.gs-box{background:var(--contour-tint);border:1px solid #d3b98a;border-radius:var(--radius);padding:12px;margin-bottom:14px}
-.gs-box label{color:var(--contour);margin-bottom:5px}
-.gs-box input{border-color:#d3b98a;font-family:var(--font-mono);font-size:11px}
-.gs-box .field{margin-bottom:10px}
-.gs-box .field:last-child{margin-bottom:0}
+.code-copy{background:var(--water);color:#fff;border:none;padding:4px 10px;border-radius:var(--radius);font-size:10px;cursor:pointer;font-family:inherit}
+.code-copy:hover{background:var(--water-dark)}
 </style>
 </head>
 <body>
@@ -134,172 +133,75 @@ tr:hover td{background:var(--paper)}
       <path d="M12 24 Q20 17 28 24" fill="none" stroke="#1e7a72" stroke-width="2.6"/>
     </svg>
     <div>
-      <h1>HydroCrue &mdash; Gestionnaire de Licences</h1>
-      <div class="sub">Contrôle d'activation &mdash; Identifiant Machine + Google Sheets (outil unifié BV-Calc + HydroCrue)</div>
+      <h1>HydroCrue &mdash; Plateforme de Licences</h1>
+      <div class="sub">Postes enregistrés (essai automatique + activation à distance, sans code)</div>
     </div>
   </div>
-  <div class="badge">v1 &mdash; En ligne</div>
+  <div class="badge">v2 &mdash; Modèle unifié</div>
 </div>
 
 <div class="wrap">
 
   <div class="warn" style="margin-bottom:18px">
-    ⚠️ <b>Clé d'administration :</b> saisissez-la ci-dessous (champ "Clé d'administration") — elle n'est jamais
-    stockée dans le dépôt du projet, seulement dans le stockage local de ce navigateur. Voir le panneau
-    "Configuration" tout en bas pour retrouver ou modifier le script Google Apps Script déployé.
+    ⚠️ <b>Clé d'administration :</b> saisissez-la ci-dessous — elle n'est jamais stockée dans le dépôt du projet,
+    seulement dans le stockage local de ce navigateur. Voir le panneau "Configuration" tout en bas pour le script
+    Google Apps Script à déployer/mettre à jour.
+  </div>
+
+  <div class="gs-box">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field" style="margin-bottom:0">
+        <label>🔗 URL Google Apps Script (obligatoire)</label>
+        <input type="text" id="gsUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" oninput="saveConfig()">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>🔑 Clé d'administration (identique à ADMIN_KEY dans le script)</label>
+        <input type="text" id="adminKey" placeholder="Clé secrète" oninput="saveConfig()">
+      </div>
+    </div>
+    <small style="color:var(--contour);display:block;margin-top:8px">Voir le panneau "Configuration" en bas de page pour créer/mettre à jour le script gratuit et définir cette clé.</small>
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="stat-v" id="sTotal">0</div><div class="stat-l">Total</div></div>
-    <div class="stat"><div class="stat-v" id="sActive" style="color:var(--ok)">0</div><div class="stat-l">Actives</div></div>
-    <div class="stat"><div class="stat-v" id="sRevoked" style="color:var(--error)">0</div><div class="stat-l">Révoquées</div></div>
-    <div class="stat"><div class="stat-v" id="sExpired" style="color:var(--warn)">0</div><div class="stat-l">Expirées</div></div>
+    <div class="stat"><div class="stat-v" id="sTotal">–</div><div class="stat-l">Total postes</div></div>
+    <div class="stat"><div class="stat-v" id="sTrial" style="color:var(--water-dark)">–</div><div class="stat-l">En essai</div></div>
+    <div class="stat"><div class="stat-v" id="sPending" style="color:var(--warn)">–</div><div class="stat-l">En attente de paiement</div></div>
+    <div class="stat"><div class="stat-v" id="sActive" style="color:var(--ok)">–</div><div class="stat-l">Actifs (licenciés)</div></div>
   </div>
 
-  <div class="g2">
-
-    <!-- GÉNÉRATION -->
-    <div class="panel">
-      <div class="panel-hd">🔧 Générer un code d'activation</div>
-      <div class="panel-bd">
-
-        <div class="gs-box">
-          <div class="field">
-            <label>🔗 URL Google Apps Script (obligatoire)</label>
-            <input type="text" id="gsUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" oninput="saveConfig()">
-          </div>
-          <div class="field">
-            <label>🔑 Clé d'administration (doit être identique à ADMIN_KEY dans le script)</label>
-            <input type="text" id="adminKey" placeholder="Clé secrète" oninput="saveConfig()">
-          </div>
-          <small style="color:var(--contour)">Voir le panneau "Configuration" en bas de page pour créer le script gratuit et définir cette clé.</small>
-        </div>
-
-        <div class="field">
-          <label>💻 Identifiant Machine du poste client</label>
-          <input type="text" id="machineIdInput" placeholder="Ex: 4F2A-9B10-EE31-0C7D"
-            oninput="this.value=this.value.replace(/[^0-9A-Fa-f-]/g,'').toUpperCase()">
-          <small>Le client voit cet identifiant sur l'écran d'activation de HydroCrue, avec un bouton Copier.</small>
-        </div>
-
-        <div class="field">
-          <label>👤 Nom du client / Bureau d'études</label>
-          <input type="text" id="clientName" placeholder="Ex: Cabinet Hydraulique Alami">
-        </div>
-
-        <div class="field">
-          <label>📅 Durée d'activation</label>
-          <select id="durSel" onchange="toggleCustom()">
-            <option value="30">30 jours</option>
-            <option value="90">90 jours (3 mois)</option>
-            <option value="180">180 jours (6 mois)</option>
-            <option value="365" selected>365 jours (1 an)</option>
-            <option value="730">730 jours (2 ans)</option>
-            <option value="0">Permanent</option>
-            <option value="custom">Personnalisé…</option>
-          </select>
-        </div>
-        <div class="field" id="customBox" style="display:none">
-          <label>Nombre de jours</label>
-          <input type="number" id="customDays" value="30" min="1">
-        </div>
-
-        <div class="field">
-          <label>📝 Note (optionnel)</label>
-          <input type="text" id="noteInput" placeholder="Ex: Renouvellement, projet barrage Ighi">
-        </div>
-
-        <button class="btn btn-primary btn-full" onclick="doGenerate()">
-          🔒 Générer &amp; préparer le code
-        </button>
-
-        <div id="genResult" style="display:none;margin-top:14px">
-          <div class="code-box">
-            <button class="code-copy" onclick="copyCode()">📋 Copier</button>
-            <span id="genCode"></span>
-          </div>
-          <div class="info" id="genInfo"></div>
-          <button class="btn btn-full btn-ok" onclick="syncToSheets()" id="syncBtn" style="margin-bottom:8px">
-            ☁️ Synchroniser vers Google Sheets (activer)
-          </button>
-          <div id="syncMsg" style="font-size:11.5px"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- AIDE -->
-    <div>
-      <div class="panel">
-        <div class="panel-hd">🔍 Vérifier / Modifier une licence</div>
-        <div class="panel-bd">
-          <div class="field">
-            <label>Code à vérifier ou modifier</label>
-            <input type="text" id="verifyCode" placeholder="GDX-XXXXXX-XXXXXX">
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" onclick="doVerify()">Vérifier</button>
-            <button class="btn btn-danger btn-sm" onclick="doRevoke()">🔴 Révoquer</button>
-            <button class="btn btn-ok btn-sm" onclick="doReactivate()">🟢 Réactiver</button>
-          </div>
-          <div id="verifyResult"></div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-hd">📋 Mode d'emploi rapide</div>
-        <div class="panel-bd">
-          <div class="steps">
-            <div class="step"><div class="step-num">1</div>
-              <div class="step-txt">Le client lance <b>HydroCrue</b> (application de bureau) → l'écran d'activation affiche son <b>Identifiant Machine</b> en grand, avec un bouton Copier.</div>
-            </div>
-            <div class="step"><div class="step-num">2</div>
-              <div class="step-txt">Il vous envoie cet identifiant (ex : <code>4F2A-9B10-EE31-0C7D</code>). Collez-le dans le champ Identifiant Machine ci-contre.</div>
-            </div>
-            <div class="step"><div class="step-num">3</div>
-              <div class="step-txt">Remplissez le nom du client, choisissez la durée, puis <b>Générer</b>.</div>
-            </div>
-            <div class="step"><div class="step-num">4</div>
-              <div class="step-txt">Cliquez <b>Synchroniser vers Google Sheets</b> → le code devient actif immédiatement.</div>
-            </div>
-            <div class="step"><div class="step-num">5</div>
-              <div class="step-txt">Envoyez le code au client → il l'entre sur l'écran d'activation → <b>Activer ce poste</b>.</div>
-            </div>
-            <div class="step"><div class="step-num">6</div>
-              <div class="step-txt">Pour bloquer : cliquez <b>Révoquer</b>. Le blocage prend effet au <b>prochain contrôle</b> de HydroCrue sur ce poste (contrôle toutes les 60s si le poste est ouvert ; jusqu'à 7 jours de grâce si le poste était hors-ligne).</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-hd">⏱ Version d'essai 7 jours</div>
-        <div class="panel-bd" style="font-size:12px;line-height:1.8;color:var(--ink-soft)">
-          La build d'essai (<code>npm run dist:essai</code>, voir README du projet HydroCrue) ne passe <b>jamais</b> par
-          ce gestionnaire de licences : elle s'auto-active 7 jours à partir du premier lancement, sans code ni compte
-          Google Sheets, puis se verrouille définitivement. Utilisez cet outil uniquement pour la version vendue
-          (licence par code).
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- JOURNAL -->
+  <!-- LISTE DES POSTES -->
   <div class="panel">
     <div class="panel-hd">
-      <span>📊 Journal des licences (<span id="jCount">0</span>)</span>
+      <span>📡 Postes enregistrés (<span id="jCount">0</span>)</span>
       <div class="toolbar">
-        <button class="btn btn-ghost btn-sm" onclick="doExport()">📥 Exporter JSON</button>
-        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📤 Importer</button>
-        <input type="file" id="impFile" accept=".json" style="display:none" onchange="doImport(event)">
-        <button class="btn btn-ghost btn-sm" onclick="doSearch()">🔍 Rechercher</button>
-        <button class="btn btn-ghost btn-sm" onclick="syncAll()">☁️ Sync All</button>
-        <button class="btn btn-danger btn-sm" onclick="confirmClear()">🗑️ Effacer tout</button>
+        <label class="chk"><input type="checkbox" id="onlyPending" onchange="renderTable()"> En attente seulement</label>
+        <button class="btn btn-ghost btn-sm" onclick="refreshList()">🔄 Actualiser</button>
       </div>
     </div>
-    <div id="searchBar" style="display:none;padding:10px 18px;border-bottom:1px solid var(--line)">
-      <input type="text" id="searchInput" placeholder="Rechercher par client, identifiant machine, code…" oninput="renderTable()" style="max-width:400px">
+    <div id="tableWrap"><div class="empty">Configurez l'URL et la clé d'administration ci-dessus, puis cliquez "Actualiser".</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">📋 Comment ça marche</div>
+    <div class="panel-bd">
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div>
+          <div class="step-txt">Le client installe <b>HydroCrue</b> et le lance → un essai gratuit démarre <b>automatiquement</b>, sans rien à saisir. Son poste apparaît ici tout seul (colonne <b>Identifiant Machine</b>), avec le statut <b>Essai</b> et le temps restant.</div>
+        </div>
+        <div class="step"><div class="step-num">2</div>
+          <div class="step-txt">Passé le délai d'essai, le poste passe automatiquement <b>En attente de paiement</b> dans ce tableau (surligné) — le client voit son Identifiant Machine à l'écran et est invité à vous contacter.</div>
+        </div>
+        <div class="step"><div class="step-num">3</div>
+          <div class="step-txt">Une fois le paiement reçu, cliquez <b>✅ Activer</b> en face de la ligne correspondante (vous pouvez retrouver le poste par l'Identifiant Machine que le client vous a communiqué, ou par la date de première connexion).</div>
+        </div>
+        <div class="step"><div class="step-num">4</div>
+          <div class="step-txt">C'est tout — <b>aucun code à transmettre</b>. L'application du client se débloque automatiquement au prochain contrôle (toutes les 60s si elle est ouverte).</div>
+        </div>
+        <div class="step"><div class="step-num">5</div>
+          <div class="step-txt">Pour bloquer un poste : cliquez <b>⛔ Révoquer</b>. Effet au prochain contrôle (jusqu'à 7 jours de grâce si le poste était hors-ligne au moment de la révocation).</div>
+        </div>
+      </div>
     </div>
-    <div id="tableWrap"><div class="empty">Aucune licence enregistrée</div></div>
   </div>
 
   <!-- CONFIG -->
@@ -309,19 +211,15 @@ tr:hover td{background:var(--paper)}
 
       <div class="warn">
         <b>Prérequis :</b> un compte Google (Gmail). Tout est gratuit.
-        Le script Google Apps Script sert de serveur de vérification pour HydroCrue (routes appelées par
-        <code>src/services/licenseClient.js</code>, exactement comme pour BV-Calc — ce mécanisme n'a pas changé).
+        Le script Google Apps Script sert de serveur d'activation pour HydroCrue (routes appelées par
+        <code>src/services/activationClient.js</code>). Ce script crée lui-même l'onglet <code>Installations</code>
+        dans votre classeur au premier appel — aucune colonne à créer à la main.
       </div>
 
       <b>Étape 1 — Créer le Google Sheet</b>
       <ol style="margin:8px 0 14px 18px">
         <li>Ouvrez <a href="https://sheets.google.com" target="_blank" style="color:var(--water-dark)">sheets.google.com</a> → Nouveau classeur</li>
-        <li>Nommez-le <b>HydroCrue_Licences</b></li>
-        <li>En ligne 1, créez ces colonnes exactement :
-          <code style="display:block;background:var(--paper);padding:6px 10px;border-radius:3px;font-size:11px;margin:6px 0">
-            A: code &nbsp;&nbsp; B: machineId &nbsp;&nbsp; C: client &nbsp;&nbsp; D: days &nbsp;&nbsp; E: status &nbsp;&nbsp; F: createdAt &nbsp;&nbsp; G: note
-          </code>
-        </li>
+        <li>Nommez-le <b>HydroCrue_Licences</b> (le nom exact n'a pas d'importance — le script gère ses propres onglets)</li>
       </ol>
 
       <b>Étape 2 — Créer le Google Apps Script</b>
@@ -332,89 +230,117 @@ tr:hover td{background:var(--paper)}
 
       <div style="position:relative;margin-bottom:8px">
         <button class="code-copy" onclick="copyScript()" style="position:absolute;top:6px;right:6px;z-index:1">📋 Copier</button>
-        <textarea id="gsCode" readonly rows="34"
+        <textarea id="gsCode" readonly rows="40"
           style="width:100%;font-family:'IBM Plex Mono',monospace;font-size:10.5px;background:#16283a;
             color:#a8d8c8;border:none;border-radius:6px;padding:14px;resize:none;line-height:1.7">
-const SHEET_NAME = "Feuille 1"; // Adaptez si votre feuille a un nom différent
-const ADMIN_KEY  = "__ADMIN_KEY__"; // Doit être identique au champ "Clé d'administration" de cet outil — changez-la si besoin, mais dans les DEUX endroits à la fois
-
-const JOURS_LICENCE_PERMANENTE = 36500; // ~100 ans : permet d'afficher une date d'expiration même pour une licence "Permanent" (days=0)
+const SHEET_NAME  = "Installations"; // créé automatiquement au premier appel si absent
+const ADMIN_KEY   = "__ADMIN_KEY__"; // Doit être identique au champ "Clé d'administration" de cet outil
+const TRIAL_HEURES = 72; // 3 jours — DOIT rester identique à DUREE_ESSAI_HEURES (src/services/activationClient.js)
 
 function doGet(e) {
-  const p      = e.parameter;
+  const p = e.parameter;
   const action = p.action || "";
-  const sheet  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  const data   = sheet.getDataRange().getValues();
+  const sheet = getSheet_();
 
-  // ── VERIFY : appelé par HydroCrue à chaque démarrage puis toutes les 60s. Aucune clé requise. ──
-  // Si machineId est vide (vérification manuelle depuis l'outil admin), le
-  // contrôle de correspondance machine est ignoré et seul le statut brut du
-  // code est renvoyé.
-  if (action === "verify") {
-    const code      = (p.code || "").trim().toUpperCase();
-    const machineId = (p.machineId || "").trim().toUpperCase();
-
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      if ((row[0] || "").toString().trim().toUpperCase() !== code) continue;
-
-      const status  = (row[4] || "active").toString().toLowerCase();
-      const days    = parseInt(row[3]) || 0;
-      const created = new Date(row[5]);
-      const client  = row[2] || "";
-
-      if (status === "revoked") {
-        return out({ valid:false, erreur:"Licence révoquée par l'éditeur.", status:"revoked" });
-      }
-
-      if (machineId && row[1] && row[1].toString().trim().toUpperCase() !== machineId) {
-        return out({ valid:false, erreur:"Ce code est assigné à un autre poste.", status:"wrong_machine" });
-      }
-
-      const exp = days > 0
-        ? new Date(created.getTime() + days * 86400000)
-        : new Date(created.getTime() + JOURS_LICENCE_PERMANENTE * 86400000);
-
-      if (days > 0 && new Date() > exp) {
-        sheet.getRange(i + 1, 5).setValue("expired");
-        return out({ valid:false, erreur:"Licence expirée. Contactez l'éditeur.", status:"expired" });
-      }
-
-      return out({ valid:true, status:"active", client:client, expiresAt: exp.toISOString() });
-    }
-    return out({ valid:false, erreur:"Code introuvable.", status:"not_found" });
-  }
-
-  // ── ADD : enregistre une nouvelle licence. Clé admin requise. ──
-  if (action === "add") {
-    if (p.key !== ADMIN_KEY) return out({ success:false, message:"Non autorisé (clé admin incorrecte)." });
-    sheet.appendRow([
-      (p.code      || "").toUpperCase(),
-      (p.machineId || "").toUpperCase(),
-      (p.client    || ""),
-      parseInt(p.days) || 365,
-      "active",
-      new Date().toISOString(),
-      (p.note      || "")
-    ]);
-    return out({ success: true });
-  }
-
-  // ── REVOKE / REACTIVATE. Clé admin requise. ──
-  if (action === "revoke") {
-    if (p.key !== ADMIN_KEY) return out({ success:false, message:"Non autorisé (clé admin incorrecte)." });
-    const code  = (p.code   || "").trim().toUpperCase();
-    const newSt = (p.status || "revoked");
-    for (let i = 1; i < data.length; i++) {
-      if ((data[i][0] || "").toString().trim().toUpperCase() === code) {
-        sheet.getRange(i + 1, 5).setValue(newSt);
-        return out({ success: true });
-      }
-    }
-    return out({ success: false, message: "Code non trouvé." });
-  }
+  if (action === "checkin")  return doCheckin_(sheet, p);   // appelé par HydroCrue, aucune clé requise
+  if (action === "activate") return doActivate_(sheet, p);  // admin uniquement
+  if (action === "revoke")   return doRevoke_(sheet, p);    // admin uniquement (aussi utilisé pour réactiver, status=active)
+  if (action === "list")     return doList_(sheet, p);      // admin uniquement
 
   return out({ error: "Action inconnue : " + action });
+}
+
+function getSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+    sheet.appendRow(["machineId","firstSeen","lastSeen","trialExpiresAt","status","client","activatedAt","note"]);
+  }
+  return sheet;
+}
+
+// ── CHECKIN : enregistrement automatique + statut courant. Aucune clé requise. ──
+function doCheckin_(sheet, p) {
+  const machineId = (p.machineId || "").trim().toUpperCase();
+  if (!machineId) return out({ active:false, raison:"machine_id_manquant" });
+
+  const data = sheet.getDataRange().getValues();
+  const now = new Date();
+
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][0]||"").toString().trim().toUpperCase() !== machineId) continue;
+
+    const rowNum = i + 1;
+    sheet.getRange(rowNum, 3).setValue(now); // lastSeen
+    const status = (data[i][4]||"trial").toString().toLowerCase();
+
+    if (status === "revoked") return out({ active:false, status:"revoked", raison:"refuse_par_serveur" });
+    if (status === "active")  return out({ active:true,  status:"active" });
+
+    const trialExpiresAt = new Date(data[i][3]);
+    if (now < trialExpiresAt) return out({ active:true, status:"trial", trialExpiresAt: trialExpiresAt.toISOString() });
+    return out({ active:false, status:"trial", raison:"essai_expire", trialExpiresAt: trialExpiresAt.toISOString() });
+  }
+
+  // Nouveau poste : enregistrement automatique de l'essai.
+  const trialExpiresAt = new Date(now.getTime() + TRIAL_HEURES * 3600000);
+  sheet.appendRow([machineId, now, now, trialExpiresAt, "trial", "", "", ""]);
+  return out({ active:true, status:"trial", trialExpiresAt: trialExpiresAt.toISOString() });
+}
+
+// ── ACTIVATE : un clic dans l'outil admin, aucun code. Clé admin requise. ──
+function doActivate_(sheet, p) {
+  if (p.key !== ADMIN_KEY) return out({ success:false, message:"Non autorisé (clé admin incorrecte)." });
+  const machineId = (p.machineId || "").trim().toUpperCase();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][0]||"").toString().trim().toUpperCase() === machineId) {
+      sheet.getRange(i + 1, 5).setValue("active");
+      sheet.getRange(i + 1, 7).setValue(new Date());
+      if (p.client) sheet.getRange(i + 1, 6).setValue(p.client);
+      return out({ success: true });
+    }
+  }
+  return out({ success:false, message:"Identifiant Machine introuvable." });
+}
+
+// ── REVOKE / RÉACTIVER (status=active). Clé admin requise. ──
+function doRevoke_(sheet, p) {
+  if (p.key !== ADMIN_KEY) return out({ success:false, message:"Non autorisé (clé admin incorrecte)." });
+  const machineId = (p.machineId || "").trim().toUpperCase();
+  const newStatus = p.status || "revoked";
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][0]||"").toString().trim().toUpperCase() === machineId) {
+      sheet.getRange(i + 1, 5).setValue(newStatus);
+      return out({ success: true });
+    }
+  }
+  return out({ success:false, message:"Identifiant Machine introuvable." });
+}
+
+// ── LIST : tous les postes, pour le tableau de l'outil admin. Clé admin requise. ──
+function doList_(sheet, p) {
+  if (p.key !== ADMIN_KEY) return out({ success:false, message:"Non autorisé (clé admin incorrecte)." });
+  const data = sheet.getDataRange().getValues();
+  const rows = [];
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    if (!r[0]) continue;
+    rows.push({
+      machineId: r[0], firstSeen: toIso_(r[1]), lastSeen: toIso_(r[2]),
+      trialExpiresAt: toIso_(r[3]), status: (r[4]||"trial").toString().toLowerCase(),
+      client: r[5] || "", activatedAt: toIso_(r[6]), note: r[7] || "",
+    });
+  }
+  return out({ success:true, rows: rows });
+}
+
+function toIso_(v) {
+  if (!v) return null;
+  const d = (v instanceof Date) ? v : new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 function out(obj) {
@@ -432,7 +358,7 @@ function out(obj) {
         <li>Cliquez <b>Déployer → Nouveau déploiement</b></li>
         <li>Type : <b>Application Web</b></li>
         <li>Exécuter en tant que : <b>Moi</b></li>
-        <li>Qui a accès : <b>Tout le monde</b> (nécessaire pour que HydroCrue puisse vérifier)</li>
+        <li>Qui a accès : <b>Tout le monde</b> (nécessaire pour que HydroCrue puisse s'enregistrer)</li>
         <li>Cliquez <b>Déployer</b> → autorisez les permissions demandées</li>
         <li>Copiez l'URL affichée (commence par <code>https://script.google.com/macros/s/</code>) et collez-la dans le champ <b>URL Google Apps Script</b> en haut de cette page</li>
       </ol>
@@ -444,41 +370,36 @@ function out(obj) {
       </ol>
 
       <div class="info">
-        ✓ Une fois configuré : chaque démarrage de HydroCrue (et chaque contrôle périodique, toutes les 60s) contacte
-        votre Google Sheet. Si vous modifiez le code du script après un premier déploiement, utilisez
-        <b>Déployer → Gérer les déploiements → ✏️ → Nouvelle version</b> pour que les changements prennent effet
-        (l'URL reste la même). En cas de coupure réseau, le poste client garde l'accès <b>jusqu'à 7 jours</b> depuis
-        sa dernière vérification réussie (tolérance hors-ligne), puis se bloque automatiquement si le serveur reste
-        injoignable.
+        ✓ Une fois configuré : chaque démarrage de HydroCrue (et chaque contrôle périodique, toutes les 60s)
+        s'enregistre/se vérifie auprès de votre Google Sheet. Si vous modifiez le code du script après un premier
+        déploiement, utilisez <b>Déployer → Gérer les déploiements → ✏️ → Nouvelle version</b> pour que les
+        changements prennent effet (l'URL reste la même). En cas de coupure réseau, un poste déjà <b>activé</b>
+        garde l'accès <b>jusqu'à 7 jours</b> depuis sa dernière vérification réussie, puis se bloque
+        automatiquement si le serveur reste injoignable. Un poste en <b>essai</b> continue de décompter
+        localement en cas de coupure réseau (redevient autoritaire dès que le serveur répond).
+      </div>
+
+      <div class="warn">
+        ⚠️ <b>Changement de modèle :</b> ce script remplace l'ancien système à codes d'activation
+        (<code>action=verify/add</code> sur la feuille de calcul "code/machineId/client/days/status"). Si vous
+        avez déjà distribué des codes à des clients avec l'ancienne version, ce nouveau script ne les reconnaît
+        plus — contactez ces clients pour les faire passer sur ce nouveau modèle (ils réapparaîtront
+        automatiquement ici dès leur prochain lancement, en essai ou à activer directement).
       </div>
     </div>
   </div>
 
 </div>
 
-<!-- Modal -->
-<div class="modal-bg" id="modalConfirm" onclick="closeModal()">
-  <div class="modal" onclick="event.stopPropagation()">
-    <h3 id="modalTitle">Confirmation</h3>
-    <p id="modalText"></p>
-    <div class="modal-btns">
-      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-danger btn-sm" id="modalOk">Confirmer</button>
-    </div>
-  </div>
-</div>
-
 <script>
-const DB_KEY  = "gradex_lic_db_v1";
-const CFG_KEY = "gradex_lic_cfg_v1";
+const CFG_KEY = "gradex_lic_cfg_v2";
 // Volontairement VIDES (voir avertissement de sécurité en tête de page) :
 // déployez votre propre script + choisissez votre propre clé avant de
-// distribuer HydroCrue. Ne pas réutiliser les valeurs des anciens outils
-// BV-Calc / GRADEX.
+// distribuer HydroCrue.
 const DEFAULT_GS_URL = "https://script.google.com/macros/s/AKfycbxdXrHXBucUZvmwXU2BchlDlof6HRtQWc-CE8uUdAKCPdL4yfl1tVryxY_96Gr5tb1z/exec";
 const DEFAULT_ADMIN_KEY = "";
-let db = [], cfg = { gsUrl:"", adminKey:"" };
-let searchVisible = false, currentGen = null;
+let cfg = { gsUrl:"", adminKey:"" };
+let rows = [];
 
 // ── Config ────────────────────────────────────────────────────
 function loadConfig() {
@@ -493,293 +414,129 @@ function saveConfig() {
   localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
 }
 
-// ── BD ────────────────────────────────────────────────────────
-function loadDB() {
-  try { db = JSON.parse(localStorage.getItem(DB_KEY)) || []; } catch { db = []; }
-}
-function saveDB() { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
-
-// ── Génération ────────────────────────────────────────────────
-function genCode(machineId) {
-  let h = 0x5F3759DF;
-  for (let i = 0; i < machineId.length; i++) h = ((h << 5) - h + machineId.charCodeAt(i)) | 0;
-  const hash = Math.abs(h).toString(36).toUpperCase().padStart(6,"0").slice(-6);
-  const rand  = Math.random().toString(36).slice(2).toUpperCase().padStart(6,"0").slice(-6);
-  return "GDX-" + hash + "-" + rand;
-}
-
-function doGenerate() {
-  const machineId = document.getElementById("machineIdInput").value.trim();
-  const client = document.getElementById("clientName").value.trim();
-  const note   = document.getElementById("noteInput").value.trim();
-  if (!machineId) { showToast("Entrez l'identifiant machine du client."); return; }
-  if (!/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/.test(machineId)) {
-    showToast("Format invalide. Exemple : 4F2A-9B10-EE31-0C7D"); return;
-  }
-  if (!client) { showToast("Entrez le nom du client."); return; }
-  let days = parseInt(document.getElementById("durSel").value);
-  if (document.getElementById("durSel").value === "custom")
-    days = parseInt(document.getElementById("customDays").value) || 30;
-
-  const code = genCode(machineId);
-  currentGen = { code, machineId, client, days, note, status:"pending", createdAt:new Date().toISOString(), synced:false };
-
-  document.getElementById("genCode").textContent = code;
-  const expTxt = days === 0 ? "Permanent"
-    : days + " jours — expire le " + new Date(Date.now()+days*86400000).toLocaleDateString("fr-FR");
-  document.getElementById("genInfo").innerHTML =
-    "Code préparé pour <b>" + esc(client) + "</b> (Machine : <b>" + machineId + "</b>)<br>" +
-    "Validité : <b>" + expTxt + "</b><br>" +
-    "Cliquez <b>Synchroniser</b> pour l'activer dans Google Sheets.";
-  document.getElementById("genResult").style.display = "block";
-  document.getElementById("syncMsg").textContent = "";
-}
-
-function copyCode() {
-  if (!currentGen) return;
-  navigator.clipboard.writeText(currentGen.code).then(()=>showToast("Code copié !"));
-}
-
-async function syncToSheets() {
-  if (!currentGen) return;
+// ── Liste des postes ────────────────────────────────────────────
+async function refreshList() {
   const url = document.getElementById("gsUrl").value.trim();
   const key = document.getElementById("adminKey").value.trim();
-  if (!url || !url.includes("script.google.com")) {
-    showToast("Configurez d'abord l'URL Google Apps Script !");
-    return;
-  }
-  const btn = document.getElementById("syncBtn");
-  const msg = document.getElementById("syncMsg");
-  btn.disabled = true; btn.textContent = "Synchronisation en cours…";
-
+  if (!url || !url.includes("script.google.com")) { showToast("Configurez d'abord l'URL Google Apps Script."); return; }
+  if (!key) { showToast("Configurez d'abord la clé d'administration."); return; }
+  document.getElementById("tableWrap").innerHTML = '<div class="empty">Chargement…</div>';
   try {
-    const p = new URLSearchParams({
-      action:"add", code:currentGen.code, machineId:currentGen.machineId,
-      client:currentGen.client, days:currentGen.days, note:currentGen.note||"", key:key
-    });
-    const r = await fetch(url + "?" + p, { cache:"no-store" });
+    const r = await fetch(url + "?action=list&key=" + encodeURIComponent(key), { cache:"no-store" });
     const d = await r.json();
-    if (d.success) {
-      currentGen.status = "active"; currentGen.synced = true;
-      db.unshift(currentGen); saveDB(); renderTable(); updateStats();
-      msg.innerHTML = '<span style="color:var(--ok)">Synchronisé ! Code actif immédiatement.</span>';
-      setTimeout(() => {
-        document.getElementById("genResult").style.display = "none";
-        document.getElementById("machineIdInput").value = "";
-        document.getElementById("clientName").value = "";
-        document.getElementById("noteInput").value = "";
-        currentGen = null;
-      }, 2500);
-    } else {
-      msg.innerHTML = '<span style="color:var(--error)">Erreur : ' + esc(d.message||"Échec") + '</span>';
-    }
-  } catch(e) {
-    currentGen.status = "pending"; currentGen.synced = false;
-    db.unshift(currentGen); saveDB(); renderTable(); updateStats();
-    msg.innerHTML = '<span style="color:var(--warn)">Hors ligne — enregistré localement. Utilisez "Sync All" plus tard.</span>';
-  }
-  btn.disabled = false; btn.textContent = "☁️ Synchroniser vers Google Sheets (activer)";
-}
-
-async function syncAll() {
-  const url = document.getElementById("gsUrl").value.trim();
-  const key = document.getElementById("adminKey").value.trim();
-  if (!url) { showToast("URL Google Apps Script manquante."); return; }
-  let n = 0;
-  for (const e of db) {
-    if (e.synced) continue;
-    try {
-      const p = new URLSearchParams({ action:"add", code:e.code, machineId:e.machineId, client:e.client, days:e.days, note:e.note||"", key:key });
-      const r = await fetch(url + "?" + p, { cache:"no-store" });
-      const d = await r.json();
-      if (d.success) { e.synced=true; e.status="active"; n++; }
-    } catch {}
-  }
-  saveDB(); renderTable(); updateStats();
-  showToast(n + " entrée(s) synchronisée(s)");
-}
-
-// ── Vérification ─────────────────────────────────────────────
-async function doVerify() {
-  const code = document.getElementById("verifyCode").value.trim().toUpperCase();
-  const el   = document.getElementById("verifyResult");
-  if (!code) { el.innerHTML=""; return; }
-  const url = document.getElementById("gsUrl").value.trim();
-  el.innerHTML = '<div style="color:#555;font-size:11px">Vérification en cours…</div>';
-  if (url) {
-    try {
-      // Pas de machineId ici : on veut le statut brut du code, indépendamment du poste.
-      const r = await fetch(url + "?action=verify&code=" + code, { cache:"no-store" });
-      const d = await r.json();
-      const col = {active:"var(--ok)",revoked:"var(--error)",expired:"var(--warn)",not_found:"var(--ink-soft)"};
-      el.innerHTML = '<div style="font-size:11px;padding:8px 10px;border-radius:4px;' +
-        'background:' + (d.valid?"var(--ok-tint)":"var(--error-tint)") + ';' +
-        'border:1px solid ' + (d.valid?"#b7d9c6":"#eab4ab") + ';' +
-        'color:' + (col[d.status]||"#333") + '">' +
-        (d.valid?"✅":"❌") + " Statut : <b>" + (d.status||"") + "</b>" +
-        (d.client ? " — Client : <b>" + esc(d.client) + "</b>" : "") +
-        "<br>" + esc(d.erreur||d.message||"") + "</div>";
-    } catch { el.innerHTML = '<div class="err">Impossible de joindre Google Sheets.</div>'; }
-  } else {
-    const local = db.find(e=>e.code===code);
-    if (local) el.innerHTML = '<div class="info">Trouvé localement — Client : <b>' + esc(local.client) + '</b> — Machine : ' + local.machineId + '</div>';
-    else el.innerHTML = '<div class="err">Code non trouvé (configurez Google Sheets pour une vérification complète).</div>';
+    if (d.success === false) { document.getElementById("tableWrap").innerHTML = '<div class="err" style="margin:14px">' + esc(d.message||"Erreur") + '</div>'; return; }
+    rows = d.rows || [];
+    renderTable();
+    updateStats();
+  } catch (e) {
+    document.getElementById("tableWrap").innerHTML = '<div class="err" style="margin:14px">Impossible de joindre Google Sheets — vérifiez l\'URL et votre connexion.</div>';
   }
 }
 
-async function doRevoke() {
-  const code = document.getElementById("verifyCode").value.trim().toUpperCase();
-  if (!code) { showToast("Entrez un code à révoquer."); return; }
-  openModal("Révoquer cette licence ?",
-    "Révoquer <b>" + code + "</b> ? Le poste client sera bloqué à son prochain contrôle (toutes les 60s si ouvert ; jusqu'à 7 jours de grâce s'il est hors-ligne).",
-    async () => {
-      await changeStatus(code, "revoked");
-      document.getElementById("verifyResult").innerHTML = '<div class="err">Licence révoquée. Bloquée au prochain contrôle chez le client.</div>';
-    });
+function statusInfo(row) {
+  const now = new Date();
+  if (row.status === "revoked") return { key:"revoked", label:"⛔ Révoqué", cls:"b-rev", pending:false };
+  if (row.status === "active")  return { key:"active",  label:"✅ Actif",   cls:"b-act", pending:false };
+  // trial
+  const exp = row.trialExpiresAt ? new Date(row.trialExpiresAt) : null;
+  if (exp && now < exp) {
+    const hLeft = (exp - now) / 3600000;
+    const txt = hLeft >= 24 ? Math.ceil(hLeft/24) + " j restant(s)" : Math.max(1, Math.round(hLeft)) + " h restante(s)";
+    return { key:"trial", label:"⏱ Essai — " + txt, cls:"b-trial", pending:false };
+  }
+  return { key:"pending", label:"⏳ En attente de paiement", cls:"b-pend", pending:true };
 }
 
-async function doReactivate() {
-  const code = document.getElementById("verifyCode").value.trim().toUpperCase();
-  if (!code) { showToast("Entrez un code à réactiver."); return; }
-  await changeStatus(code, "active");
-  document.getElementById("verifyResult").innerHTML = '<div class="info">Licence réactivée avec succès.</div>';
-}
-
-async function changeStatus(code, status) {
-  const e = db.find(x=>x.code===code);
-  if (e) { e.status=status; saveDB(); renderTable(); updateStats(); }
-  const url = document.getElementById("gsUrl").value.trim();
-  const key = document.getElementById("adminKey").value.trim();
-  if (!url) return;
-  try {
-    const r = await fetch(url + "?action=revoke&code=" + code + "&status=" + status + "&key=" + encodeURIComponent(key), { cache:"no-store" });
-    const d = await r.json();
-    if (d.success === false) { showToast(d.message || "Refusé par le serveur."); return; }
-    showToast(status==="revoked" ? "Révoqué dans Google Sheets" : "Réactivé dans Google Sheets");
-  } catch { showToast("Hors ligne — mis à jour localement seulement."); }
-}
-
-// ── Tableau ───────────────────────────────────────────────────
 function renderTable() {
   const wrap = document.getElementById("tableWrap");
-  const q = (document.getElementById("searchInput")?.value||"").toLowerCase();
-  let rows = db.filter(it => !q
-    || it.code.toLowerCase().includes(q)
-    || it.machineId.toLowerCase().includes(q)
-    || it.client.toLowerCase().includes(q)
-    || (it.note||"").toLowerCase().includes(q));
-  document.getElementById("jCount").textContent = rows.length;
-  if (!rows.length) {
-    wrap.innerHTML = '<div class="empty">' + (q?"Aucun résultat":"Aucune licence enregistrée") + '</div>';
+  const onlyPending = document.getElementById("onlyPending").checked;
+  let list = rows.map(r => ({ ...r, _st: statusInfo(r) }));
+  if (onlyPending) list = list.filter(r => r._st.pending);
+  // En attente de paiement en premier, puis essai (le plus proche d'expirer d'abord), puis actifs, puis révoqués.
+  const ordre = { pending:0, trial:1, active:2, revoked:3 };
+  list.sort((a,b) => (ordre[a._st.key]-ordre[b._st.key]) || (new Date(b.lastSeen||0) - new Date(a.lastSeen||0)));
+
+  document.getElementById("jCount").textContent = list.length;
+  if (!list.length) {
+    wrap.innerHTML = '<div class="empty">' + (onlyPending ? "Aucun poste en attente de paiement." : "Aucun poste enregistré pour l'instant.") + '</div>';
     return;
   }
-  const now = new Date();
+
   let html = '<div class="tbl-wrap"><table><thead><tr>' +
-    '<th>#</th><th>Date</th><th>Client</th><th>Machine ID</th><th>Code</th><th>Durée</th><th>Statut</th><th>Note</th><th>Actions</th>' +
+    '<th>Identifiant Machine</th><th>1ère connexion</th><th>Dernière connexion</th><th>Statut</th><th>Client / Note</th><th>Actions</th>' +
     '</tr></thead><tbody>';
 
-  rows.forEach((it, ri) => {
-    const realI = db.indexOf(it);
-    const cr = new Date(it.createdAt);
-    const perm = it.days===0;
-    const exp  = perm ? null : new Date(cr.getTime()+it.days*86400000);
-    const isExp= !perm && now>exp;
-    const st   = it.status==="revoked" ? "revoked" : isExp ? "expired" : it.status;
-    const badges = {
-      active:  '<span class="badge2 b-act">✓ Active</span>',
-      revoked: '<span class="badge2 b-rev">⛔ Révoquée</span>',
-      expired: '<span class="badge2 b-exp">⏰ Expirée</span>',
-      pending: '<span class="badge2 b-ina">⏳ En attente</span>',
-    };
-    const dLeft = exp && !isExp ? Math.ceil((exp-now)/86400000) : null;
-    const dur = perm ? "Permanent" : it.days + "j" + (dLeft?" ("+dLeft+"j)":"");
-    html += '<tr><td style="color:#9aa5af;font-size:10px">' + (rows.length-ri) + '</td>' +
-      '<td style="white-space:nowrap;font-size:10px">' + cr.toLocaleDateString("fr-FR") + '</td>' +
-      '<td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.client) + '</td>' +
-      '<td class="mono" style="font-weight:700;color:var(--water-dark)">' + it.machineId + '</td>' +
-      '<td class="mono" style="font-size:10px">' + it.code + (!it.synced?' <span style="color:var(--warn);font-size:9px">local</span>':'') + '</td>' +
-      '<td style="font-size:11px">' + dur + '</td>' +
-      '<td>' + (badges[st]||'<span class="badge2 b-ina">'+st+'</span>') + '</td>' +
-      '<td style="font-size:10px;color:var(--ink-soft);max-width:90px;overflow:hidden;text-overflow:ellipsis">' + esc(it.note||"") + '</td>' +
+  list.forEach(r => {
+    const st = r._st;
+    html += '<tr class="' + (st.pending ? 'row-pending' : '') + '">' +
+      '<td class="mono" style="font-weight:700;color:var(--water-dark)">' + esc(r.machineId) + '</td>' +
+      '<td style="white-space:nowrap;font-size:10px">' + fmtDate(r.firstSeen) + '</td>' +
+      '<td style="white-space:nowrap;font-size:10px">' + fmtDate(r.lastSeen) + '</td>' +
+      '<td><span class="badge2 ' + st.cls + '">' + st.label + '</span></td>' +
+      '<td style="font-size:10.5px;color:var(--ink-soft);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.client||r.note||"") + '</td>' +
       '<td><div class="actions">' +
-        (st!=="revoked"
-          ? '<button class="btn btn-danger btn-sm" onclick="quickRevoke('+realI+')">⛔</button>'
-          : '<button class="btn btn-ok btn-sm" onclick="quickReact('+realI+')">✅</button>') +
-        '<button class="btn btn-ghost btn-sm" onclick="copyRowCode('+realI+')" title="Copier">📋</button>' +
-        '<button class="btn btn-danger btn-sm" onclick="delItem('+realI+')" title="Supprimer">🗑️</button>' +
+        (st.key !== "active" ? '<button class="btn btn-ok btn-sm" onclick="doActivateRow(\'' + esc(r.machineId) + '\')">✅ Activer</button>' : '') +
+        (st.key !== "revoked" ? '<button class="btn btn-danger btn-sm" onclick="doRevokeRow(\'' + esc(r.machineId) + '\')">⛔ Révoquer</button>' : '<button class="btn btn-ghost btn-sm" onclick="doReactivateRow(\'' + esc(r.machineId) + '\')">↩️ Lever la révocation</button>') +
+        '<button class="btn btn-ghost btn-sm" onclick="copyId(\'' + esc(r.machineId) + '\')" title="Copier l\'identifiant">📋</button>' +
       '</div></td></tr>';
   });
   html += '</tbody></table></div>';
   wrap.innerHTML = html;
 }
 
-async function quickRevoke(i) { await changeStatus(db[i].code,"revoked"); renderTable(); updateStats(); showToast("Révoqué"); }
-async function quickReact(i)  { await changeStatus(db[i].code,"active");  renderTable(); updateStats(); showToast("Réactivé"); }
-function copyRowCode(i) { navigator.clipboard.writeText(db[i].code).then(()=>showToast("Code copié")); }
-function delItem(i) {
-  openModal("Supprimer ?","Supprimer cet enregistrement du journal local ? (Google Sheets n'est pas modifié)",
-    ()=>{ db.splice(i,1); saveDB(); renderTable(); updateStats(); showToast("Supprimé"); });
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"});
 }
+
+async function callAction(action, machineId, extra) {
+  const url = document.getElementById("gsUrl").value.trim();
+  const key = document.getElementById("adminKey").value.trim();
+  const p = new URLSearchParams(Object.assign({ action:action, machineId:machineId, key:key }, extra||{}));
+  const r = await fetch(url + "?" + p, { cache:"no-store" });
+  return r.json();
+}
+
+async function doActivateRow(machineId) {
+  const d = await callAction("activate", machineId);
+  if (d.success) { showToast("Poste activé — débloqué automatiquement sous 60s côté client."); refreshList(); }
+  else showToast(d.message || "Échec de l'activation.");
+}
+async function doRevokeRow(machineId) {
+  const d = await callAction("revoke", machineId, { status:"revoked" });
+  if (d.success) { showToast("Poste révoqué."); refreshList(); }
+  else showToast(d.message || "Échec de la révocation.");
+}
+async function doReactivateRow(machineId) {
+  const d = await callAction("revoke", machineId, { status:"active" });
+  if (d.success) { showToast("Révocation levée — poste réactivé."); refreshList(); }
+  else showToast(d.message || "Échec.");
+}
+function copyId(machineId) { navigator.clipboard.writeText(machineId).then(()=>showToast("Identifiant copié")); }
 
 // ── Stats ─────────────────────────────────────────────────────
 function updateStats() {
-  const now=new Date(); let act=0,rev=0,exp=0;
-  db.forEach(it=>{
-    if(it.status==="revoked") rev++;
-    else {
-      const cr=new Date(it.createdAt);
-      const e2=it.days===0?null:new Date(cr.getTime()+it.days*86400000);
-      (e2&&now>e2)?exp++:act++;
-    }
+  let trial=0, pending=0, active=0;
+  rows.forEach(r => {
+    const st = statusInfo(r).key;
+    if (st === "trial") trial++;
+    else if (st === "pending") pending++;
+    else if (st === "active") active++;
   });
-  document.getElementById("sTotal").textContent=db.length;
-  document.getElementById("sActive").textContent=act;
-  document.getElementById("sRevoked").textContent=rev;
-  document.getElementById("sExpired").textContent=exp;
-}
-
-// ── Export/Import ─────────────────────────────────────────────
-function doExport() {
-  const b=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(b);
-  a.download="gradex_licences_"+new Date().toISOString().slice(0,10)+".json"; a.click(); URL.revokeObjectURL(a.href);
-  showToast("Journal exporté");
-}
-function doImport(ev) {
-  const f=ev.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=e=>{ try { const d=JSON.parse(e.target.result); if(Array.isArray(d)){db=d;saveDB();renderTable();updateStats();showToast(d.length+" licences importées");} } catch{showToast("Fichier invalide");} };
-  r.readAsText(f); ev.target.value="";
-}
-function confirmClear() {
-  openModal("Effacer tout","Effacer tout le journal local ? (Google Sheets non affecté)",
-    ()=>{db=[];saveDB();renderTable();updateStats();showToast("Journal effacé");});
+  document.getElementById("sTotal").textContent = rows.length;
+  document.getElementById("sTrial").textContent = trial;
+  document.getElementById("sPending").textContent = pending;
+  document.getElementById("sActive").textContent = active;
 }
 
 // ── UI ────────────────────────────────────────────────────────
-function toggleCustom() {
-  document.getElementById("customBox").style.display = document.getElementById("durSel").value==="custom"?"block":"none";
-}
-function doSearch() {
-  searchVisible=!searchVisible;
-  document.getElementById("searchBar").style.display=searchVisible?"block":"none";
-  if(searchVisible) document.getElementById("searchInput").focus();
-}
-function esc(t){const d=document.createElement("div");d.textContent=t;return d.innerHTML;}
+function esc(t){const d=document.createElement("div");d.textContent=t==null?"":String(t);return d.innerHTML;}
 function showToast(m){
   document.querySelectorAll(".toast").forEach(e=>e.remove());
   const d=document.createElement("div");d.className="toast";d.textContent=m;
   document.body.appendChild(d);setTimeout(()=>d.remove(),3000);
 }
-let _cb=null;
-function openModal(title,text,cb){
-  _cb=cb;
-  document.getElementById("modalTitle").textContent=title;
-  document.getElementById("modalText").innerHTML=text;
-  document.getElementById("modalOk").onclick=()=>{cb&&cb();closeModal();};
-  document.getElementById("modalConfirm").classList.add("show");
-}
-function closeModal(){ document.getElementById("modalConfirm").classList.remove("show"); _cb=null; }
 function copyScript(){
   const key = document.getElementById("adminKey").value.trim() || "__ADMIN_KEY__";
   const script = document.getElementById("gsCode").value.replace("__ADMIN_KEY__", key);
@@ -787,7 +544,8 @@ function copyScript(){
 }
 
 // ── Init ──────────────────────────────────────────────────────
-loadConfig(); loadDB(); renderTable(); updateStats();
+loadConfig();
+if (cfg.gsUrl && cfg.adminKey) refreshList();
 </script>
 </body>
 </html>
