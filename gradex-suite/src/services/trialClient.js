@@ -38,7 +38,12 @@ const RACINE_LECTURE = path.join(__dirname, '..', '..'); // src/services -> raci
 const RACINE_ECRITURE = process.env.GRADEX_DATA_DIR || RACINE_LECTURE;
 const FICHIER_ESSAI = path.join(RACINE_ECRITURE, '.essai-local.json');
 
-export const DUREE_ESSAI_HEURES = 24;
+// 7 jours (168h) — porté de 24h à 7 jours (2026-08-29, retour utilisateur :
+// les clients qui découvraient déjà BV-Calc avaient besoin de plus de temps
+// pour évaluer la version fusionnée avant d'acheter une licence complète).
+// Même durée que la tolérance hors-ligne de la version sous licence
+// (licenseClient.js), pour une cohérence d'ensemble du produit.
+export const DUREE_ESSAI_HEURES = 24 * 7;
 const TOLERANCE_HORLOGE_MS = 5 * 60 * 1000; // 5 min de marge (fuseau/synchro NTP) avant de suspecter un recul volontaire
 
 function lireEssai() {

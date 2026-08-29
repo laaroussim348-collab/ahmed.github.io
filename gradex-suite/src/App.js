@@ -1,5 +1,5 @@
 // ============================================================
-//  GRADEX — Débits de Crue & Bassins Versants
+//  HydroCrue — Débits de Crue & Bassins Versants
 //  Méthode GRADEX (Guillot & Duband, 1967) — inchangée —
 //  + méthodes complémentaires du Guide technique d'assainissement
 //  routier 2020 (moteur BV-Calc, formules inchangées, voir
@@ -12,10 +12,11 @@ import {
   ComposedChart, LineChart, BarChart, Bar, Cell, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, Scatter, ResponsiveContainer
 } from "recharts";
-import { concentrationTime } from "./calculations/index.js";
+import { concentrationTime, watershed } from "./calculations/index.js";
 import { useI18n } from "./useI18n";
 import LicenceGate from "./licence/LicenceGate";
 import MethodesTab, { MC_ETAT_INITIAL } from "./tabs/MethodesTab";
+import LocalisationDelimitation from "./tabs/LocalisationDelimitation";
 import {
   f2, f3, f6, C_BLUE, C_TEAL, C_AMBER, C_RED, C_BORDER, C_HEADER, C_STRIP,
   TH, TD, TBtn, TSep, Field, CollapseSection, Panel, MItem, ChartBox, NoData,
@@ -412,8 +413,43 @@ function makeDischargeCanvas(res, station, cp) {
 }
 
 // ─── Rapport Word avec graphiques embarqués ───────────────────
+// ── Caractéristiques du bassin versant (surface/périmètre/altitudes déjà
+// saisies ou extraites par la délimitation automatique, dans l'onglet
+// "Données & Méthodes") — recalculées ici à l'identique de MethodesTab.js
+// (mêmes fonctions watershed.*), uniquement pour les afficher dans le
+// rapport (aperçu à l'écran ET export Word) ; aucune formule dupliquée/
+// modifiée. Fonction pure, appelable indépendamment du rendu React.
+function calculerCaracteristiquesBV(v) {
+  if (!v || !(parseFloat(v.surface_km2) > 0)) return null;
+  const car = { surface_km2: v.surface_km2, perimetre_km: v.perimetre_km, longueur_km: v.longueur_km,
+    altitude_min_m: v.altitude_min_m, altitude_max_m: v.altitude_max_m, altitudeMoyenne_m: v.altitudeMoyenne_m };
+  try {
+    if (v.surface_km2 && v.perimetre_km) {
+      car.compacite = watershed.indiceCompacite(parseFloat(v.surface_km2), parseFloat(v.perimetre_km), parseFloat(v.longueur_km) || undefined);
+    }
+  } catch { /* données insuffisantes pour Kg/Kh/rectangle équivalent */ }
+  try {
+    if (v.altitude_max_m !== '' && v.altitude_min_m !== '' && v.longueur_km) {
+      car.penteGlobale = watershed.penteGlobale(parseFloat(v.altitude_max_m), parseFloat(v.altitude_min_m), parseFloat(v.longueur_km) * 1000);
+    }
+  } catch { /* données insuffisantes pour la pente globale */ }
+  try {
+    const valides = (v.troncons || []).filter(tr => tr.longueur_m !== '' && tr.altAmont !== '' && tr.altAval !== '');
+    if (valides.length) {
+      const altitudes = [parseFloat(valides[0].altAmont), ...valides.map(tr => parseFloat(tr.altAval))];
+      const longueurs = valides.map(tr => parseFloat(tr.longueur_m));
+      car.pentePonderee = watershed.penteMoyennePonderee(altitudes, longueurs);
+    }
+  } catch { /* données insuffisantes pour la pente pondérée */ }
+  return car;
+}
+
+// Formatage numérique tolérant aux chaînes (les champs de v/mc sont des
+// strings de <input>) — partagé entre l'aperçu écran et l'export Word.
+function fmt(v, d = 2) { const n = parseFloat(v); return Number.isNaN(n) ? "—" : n.toFixed(d); }
+
 function buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot,
-                                 mcResultats, lignesComparatif, carteImage, observations, onDone }) {
+                                 mc, mcResultats, lignesComparatif, carteImage, observations, onDone }) {
   if (!res) return;
 
   const fmtT = T => T >= 10000 ? "10 000" : T >= 1000 ? "1 000" : String(T);
@@ -452,14 +488,44 @@ function buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot,
     // 5+ dépendent de ce qui est réellement disponible (numérotation dynamique
     // pour rester correcte quel que soit le sous-ensemble de sections présentes).
     let nSection = 4;
+
+    const carBV = calculerCaracteristiquesBV(mc);
+    const caracteristiquesSection = carBV ? `
+<h2>${++nSection}. Caractéristiques du bassin versant</h2>
+<table style="width:75%">
+  <tr><td>Surface (A)</td><td><b>${fmt(carBV.surface_km2,2)}</b> km²</td></tr>
+  ${carBV.perimetre_km ? `<tr><td>Périmètre (P)</td><td>${fmt(carBV.perimetre_km,2)} km</td></tr>` : ""}
+  ${carBV.longueur_km ? `<tr><td>Longueur du thalweg principal (L)</td><td>${fmt(carBV.longueur_km,2)} km</td></tr>` : ""}
+  ${carBV.altitude_max_m !== '' && carBV.altitude_max_m != null ? `<tr><td>Altitude maximale (Hmax)</td><td>${fmt(carBV.altitude_max_m,1)} m</td></tr>` : ""}
+  ${carBV.altitude_min_m !== '' && carBV.altitude_min_m != null ? `<tr><td>Altitude minimale — exutoire (Hmin)</td><td>${fmt(carBV.altitude_min_m,1)} m</td></tr>` : ""}
+  ${carBV.altitudeMoyenne_m !== '' && carBV.altitudeMoyenne_m != null ? `<tr><td>Altitude moyenne (Hmoy)</td><td>${fmt(carBV.altitudeMoyenne_m,1)} m</td></tr>` : ""}
+  ${carBV.compacite ? `<tr><td>Indice de compacité de Gravelius (Kg)</td><td>${carBV.compacite.Ic.toFixed(3)} — forme ${carBV.compacite.forme}</td></tr>` : ""}
+  ${carBV.compacite?.Kh != null ? `<tr><td>Indice de Horton (Kh)</td><td>${carBV.compacite.Kh.toFixed(3)}</td></tr>` : ""}
+  ${carBV.compacite?.L_equiv_km != null ? `<tr><td>Rectangle équivalent (L × l)</td><td>${carBV.compacite.L_equiv_km.toFixed(2)} × ${carBV.compacite.l_equiv_km.toFixed(2)} km</td></tr>` : ""}
+  ${carBV.penteGlobale ? `<tr><td>Pente globale du bassin (Zmax−Zmin)/L</td><td>${carBV.penteGlobale.pente_m_par_m.toFixed(4)} m/m (${carBV.penteGlobale.pente_pourcent.toFixed(2)} %)</td></tr>` : ""}
+  ${carBV.pentePonderee ? `<tr><td>Pente pondérée par tronçons</td><td>${carBV.pentePonderee.pente_m_par_m.toFixed(4)} m/m (${carBV.pentePonderee.pente_pourcent.toFixed(2)} %)</td></tr>` : ""}
+  ${mc.tc_h ? `<tr><td>Temps de concentration (tc) adopté</td><td>${fmt(parseFloat(mc.tc_h),3)} h</td></tr>` : ""}
+  ${mc.cr ? `<tr><td>Coefficient de ruissellement (Cr) adopté</td><td>${fmt(parseFloat(mc.cr),3)}</td></tr>` : ""}
+  ${mc.CN ? `<tr><td>Curve Number (CN) adopté</td><td>${fmt(parseFloat(mc.CN),1)}</td></tr>` : ""}
+</table>` : "";
+
     const mcReussis = (mcResultats || []).filter(r => !r.erreur);
+    // Détail par méthode (étapes de calcul + hypothèses), comme dans un
+    // rapport de PFE — pas seulement le résultat final.
+    const mcDetailHtml = mcReussis.map((r) => `
+<h3>${r.methode}</h3>
+${(r.etapes || []).map(e => `<p style="margin:4px 0"><b>${e.titre || ''}</b>${e.formule ? `<br/><span style="font-family:'Courier New',monospace">${e.formule}</span>` : ""}${e.application ? `<br/><span style="font-family:'Courier New',monospace;color:#555">${e.application}</span>` : ""}${e.resultat ? `<br/><b style="color:#0F6E56">${e.resultat}</b>` : ""}</p>`).join("")}
+${(r.hypotheses || []).length ? `<p style="font-size:9.5pt;color:#666"><i>Hypothèses : ${r.hypotheses.join(" ; ")}</i></p>` : ""}
+`).join("");
     const mcSection = mcReussis.length ? `
 <h2>${++nSection}. Méthodes complémentaires (Guide technique d'assainissement routier — BV-Calc)</h2>
 <p>Méthodes calculées en complément de GRADEX (utile en particulier pour les petits bassins, S &lt; 100 km²) :</p>
 <table>
   <tr><th>Méthode</th><th>Qp (m³/s)</th><th>T (ans)</th></tr>
   ${mcReussis.map((r,i) => `<tr><td style="background:${i%2===0?"#fff":"#f5f5f5"}">${r.methode}</td><td style="text-align:center;font-weight:bold;background:${i%2===0?"#fff":"#f5f5f5"}">${r.q_m3s.toFixed(3)}</td><td style="text-align:center;background:${i%2===0?"#fff":"#f5f5f5"}">${r.T}</td></tr>`).join("")}
-</table>` : "";
+</table>
+<h3 style="margin-top:14px">Détail des calculs</h3>
+${mcDetailHtml}` : "";
 
     const lignesComp = lignesComparatif || [];
     const img3 = imgC64 ? `<img src="${imgC64}" width="620" height="${Math.max(160, 40 + lignesComp.length * 26)}" style="border:1px solid #ccc"/>` : "";
@@ -486,7 +552,7 @@ ${img3 ? `<h3>Graphique — Comparaison des débits de pointe</h3><p>${img3}</p>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
       xmlns:w="urn:schemas-microsoft-com:office:word"
       xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>GRADEX — ${station}</title>
+<head><meta charset="utf-8"><title>HydroCrue — ${station}</title>
 <style>
 body{font-family:Arial,sans-serif;font-size:11pt;margin:2cm;color:#000}
 h1{font-size:16pt;color:#1a3a6a;text-align:center;border-bottom:2px solid #1a3a6a;padding-bottom:6px}
@@ -546,6 +612,7 @@ ${img1 ? `<h3>Graphique — Ajustement Gumbel</h3><p>${img1}</p>` : ""}
   ${rowsHtml}
 </table>
 ${img2 ? `<h3>Graphique — Débits de crue</h3><p>${img2}</p>` : ""}
+${caracteristiquesSection}
 ${mcSection}
 ${comparatifSection}
 ${carteSection}
@@ -567,7 +634,7 @@ ${lignesComp.length > 1 ? `<p>Le tableau comparatif situe le débit GRADEX par r
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `GRADEX_${station.replace(/\s+/g,"_")}_${new Date().toISOString().slice(0,10)}.doc`;
+    a.download = `HydroCrue_${station.replace(/\s+/g,"_")}_${new Date().toISOString().slice(0,10)}.doc`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -609,7 +676,7 @@ async function saveProjectFile(data, forceNew) {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: (data.station || "projet").replace(/\s+/g,"_") + ".hyd",
-        types: [{ description:"Fichier GRADEX (.hyd)", accept:{ "application/json":[".hyd"] } }]
+        types: [{ description:"Fichier HydroCrue (.hyd)", accept:{ "application/json":[".hyd"] } }]
       });
       _currentFileHandle = handle;
       return await _writeHandle(handle, data);
@@ -633,7 +700,7 @@ async function openProjectFile() {
   if (window.showOpenFilePicker) {
     try {
       const [handle] = await window.showOpenFilePicker({
-        types: [{ description:"Fichier GRADEX (.hyd)", accept:{ "application/json":[".hyd",".json"] } }]
+        types: [{ description:"Fichier HydroCrue (.hyd)", accept:{ "application/json":[".hyd",".json"] } }]
       });
       _currentFileHandle = handle;
       const file = await handle.getFile();
@@ -662,7 +729,7 @@ async function newProjectDialog(defaultStation) {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: (defaultStation||"nouveau_projet").replace(/\s+/g,"_")+".hyd",
-        types: [{ description:"Fichier GRADEX (.hyd)", accept:{ "application/json":[".hyd"] } }]
+        types: [{ description:"Fichier HydroCrue (.hyd)", accept:{ "application/json":[".hyd"] } }]
       });
       _currentFileHandle = handle;
       const stationName = handle.name.replace(/\.hyd$/i,"").replace(/_/g," ");
@@ -893,20 +960,29 @@ function MainApp() {
     }));
   }, [mc.tc_h, mcResultats, tc]);
 
+  // Caractéristiques du bassin versant pour l'aperçu écran de l'onglet
+  // Rapport — même fonction (pure) que celle utilisée par buildAndDownloadWord.
+  const carBV = useMemo(() => calculerCaracteristiquesBV(mc), [
+    mc.surface_km2, mc.perimetre_km, mc.longueur_km, mc.altitude_min_m,
+    mc.altitude_max_m, mc.altitudeMoyenne_m, mc.troncons, mc.tc_h, mc.cr, mc.CN,
+  ]);
+
   // Numérotation dynamique des sections de l'onglet Rapport (aperçu à l'écran)
   // — même logique que buildAndDownloadWord, pour que les deux restent cohérents
   // quel que soit le sous-ensemble de sections réellement présentes.
   const numerosRapport = useMemo(() => {
     let n = 2; // 1=Paramètres, 2=Débits extrapolés (toujours présents)
+    const carOk = parseFloat(mc.surface_km2) > 0;
     const mcOk = mcResultats.filter(r=>!r.erreur).length > 0;
     const compOk = lignesComparatif.length > 1;
     const obsOk = observations.trim().length > 0;
+    const nCar = carOk ? ++n : null;
     const nMc = mcOk ? ++n : null;
     const nComp = compOk ? ++n : null;
     const nObs = obsOk ? ++n : null;
     const nConclusions = ++n;
-    return { nMc, nComp, nObs, nConclusions };
-  }, [mcResultats, lignesComparatif, observations]);
+    return { nCar, nMc, nComp, nObs, nConclusions };
+  }, [mc.surface_km2, mcResultats, lignesComparatif, observations]);
 
   const fmtT = T => T>=10000?"10 000":T>=1000?"1 000":String(T);
 
@@ -933,7 +1009,7 @@ function MainApp() {
           padding:"0 14px", borderRight:"1px solid rgba(255,255,255,0.15)", height:"100%" }}>
           <i className="ti ti-droplet-filled" style={{ fontSize:20, color:"#a0d8ff" }} />
           <div>
-            <div style={{ fontWeight:700, fontSize:14, letterSpacing:0.5 }}>GRADEX</div>
+            <div style={{ fontWeight:700, fontSize:14, letterSpacing:0.5 }}>HydroCrue</div>
             <div style={{ fontSize:9, opacity:0.7 }}>{t('gxVersion')}</div>
           </div>
         </div>
@@ -1006,7 +1082,7 @@ function MainApp() {
         <TBtn icon="file-type-doc" label={t('tbWord')}       onClick={()=>{
           if (!res) return;
           setWordLoad(true);
-          buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage, observations,
+          buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mc, mcResultats, lignesComparatif, carteImage, observations,
             onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
         }} disabled={!res||wordLoad} title="Exporter rapport Word avec graphiques" />
         <TSep />
@@ -1042,7 +1118,14 @@ function MainApp() {
 
         {/* ═══ ONGLET DONNÉES ═══════════════════════════════════════ */}
         {tab === "donnees" && (
-          <div style={{ display:"grid", gridTemplateColumns:"290px 1fr", gap:16 }}>
+          <>
+            {/* Délimitation en tout premier : point de départ naturel d'un
+                nouveau projet, alimente automatiquement le reste (surface,
+                périmètre, altitudes, pente, Pjmax). */}
+            <LocalisationDelimitation v={mc} setV={setMc} showToast={showToast}
+              onImportToGradex={handleImportToGradex} onCarteImage={setCarteImage} nomProjet={station} />
+
+          <div style={{ display:"grid", gridTemplateColumns:"290px 1fr", gap:16, marginTop:16 }}>
 
             <div>
               <Panel title={t('gxParamBv')} icon="settings">
@@ -1283,6 +1366,7 @@ function MainApp() {
               </Panel>
             </div>
           </div>
+          </>
         )}
 
         {/* ═══ ONGLET RÉSULTATS (Gradex + Méthodes complémentaires) ═══ */}
@@ -1528,11 +1612,13 @@ function MainApp() {
 
         {/* ═══ MÉTHODES COMPLÉMENTAIRES (BV-Calc) — fusionné dans l'onglet
              "Données & Méthodes" (juste après les paramètres/Pjmax GRADEX
-             ci-dessus), plus un onglet séparé. ═══════════ */}
+             ci-dessus), plus un onglet séparé. La Localisation/délimitation
+             (LocalisationDelimitation) est rendue tout en haut de l'onglet,
+             avant les paramètres GRADEX — voir plus haut. ═══════════ */}
         {tab === "donnees" && (
           <div style={{ marginTop:18, paddingTop:14, borderTop:`2px solid ${C_BORDER}` }}>
-            <MethodesTab v={mc} setV={setMc} showToast={showToast} onImportToGradex={handleImportToGradex}
-              onResultatsChange={setMcResultats} surfaceGradex={surface} nomProjet={station} onCarteImage={setCarteImage}
+            <MethodesTab v={mc} setV={setMc} showToast={showToast}
+              onResultatsChange={setMcResultats} surfaceGradex={surface}
               gradexDisponible={!!res} gradexResultat={res ? { T: parseFloat(mc.T)||100, q_m3s: res.extrap.find(e=>e.T===(parseFloat(mc.T)||100))?.Qp } : null} />
           </div>
         )}
@@ -1551,7 +1637,7 @@ function MainApp() {
                 <button onClick={()=>{
                   if(!res) return;
                   setWordLoad(true);
-                  buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mcResultats, lignesComparatif, carteImage, observations,
+                  buildAndDownloadWord({ res, station, surface, tc, bMontana, cp, tPivot, mc, mcResultats, lignesComparatif, carteImage, observations,
                     onDone:()=>{ setWordLoad(false); showToast(t('gxToastRapportGenere')); } });
                 }} disabled={wordLoad||!res}
                   style={{ padding:"5px 16px", background:wordLoad?"#aaa":C_TEAL, color:"#fff",
@@ -1629,6 +1715,36 @@ function MainApp() {
                     </tbody>
                   </table>
                 </RS>
+
+                {carBV && (
+                  <RS n={numerosRapport.nCar} title={t('gxS5CaracteristiquesBV')}>
+                    <table style={{ width:"75%", borderCollapse:"collapse", fontSize:12 }}>
+                      <tbody>
+                        {[
+                          [t('bvSurface'), `${fmt(carBV.surface_km2,2)} km²`],
+                          ...(carBV.perimetre_km ? [[t('bvPerimetre'), `${fmt(carBV.perimetre_km,2)} km`]] : []),
+                          ...(carBV.longueur_km ? [[t('bvLongueur'), `${fmt(carBV.longueur_km,2)} km`]] : []),
+                          ...(carBV.altitude_max_m !== '' && carBV.altitude_max_m != null ? [[t('bvAltmax'), `${fmt(carBV.altitude_max_m,1)} m`]] : []),
+                          ...(carBV.altitude_min_m !== '' && carBV.altitude_min_m != null ? [[t('bvAltmin'), `${fmt(carBV.altitude_min_m,1)} m`]] : []),
+                          ...(carBV.altitudeMoyenne_m !== '' && carBV.altitudeMoyenne_m != null ? [[t('bvAltmoy'), `${fmt(carBV.altitudeMoyenne_m,1)} m`]] : []),
+                          ...(carBV.compacite ? [[t('gxKgLabel'), `${carBV.compacite.Ic.toFixed(3)} (${carBV.compacite.forme})`]] : []),
+                          ...(carBV.compacite?.Kh != null ? [[t('gxKhLabel'), carBV.compacite.Kh.toFixed(3)]] : []),
+                          ...(carBV.compacite?.L_equiv_km != null ? [[t('gxRectEquivLabel'), `${carBV.compacite.L_equiv_km.toFixed(2)} × ${carBV.compacite.l_equiv_km.toFixed(2)} km`]] : []),
+                          ...(carBV.penteGlobale ? [[t('gxPenteGlobaleLabel'), `${carBV.penteGlobale.pente_m_par_m.toFixed(4)} m/m (${carBV.penteGlobale.pente_pourcent.toFixed(2)} %)`]] : []),
+                          ...(carBV.pentePonderee ? [[t('gxPentePondereeLabel'), `${carBV.pentePonderee.pente_m_par_m.toFixed(4)} m/m (${carBV.pentePonderee.pente_pourcent.toFixed(2)} %)`]] : []),
+                          ...(mc.tc_h ? [[t('gxTcAdopteLabel'), `${fmt(parseFloat(mc.tc_h),3)} h`]] : []),
+                          ...(mc.cr ? [[t('gxCrAdopteLabel'), fmt(parseFloat(mc.cr),3)]] : []),
+                          ...(mc.CN ? [[t('gxCnAdopteLabel'), fmt(parseFloat(mc.CN),1)]] : []),
+                        ].map(([k,val]) => (
+                          <tr key={k} style={{ borderBottom:`1px solid ${C_BORDER}` }}>
+                            <td style={{ padding:"3px 8px", color:"#555" }}>{k}</td>
+                            <td style={{ padding:"3px 8px", fontWeight:600 }}>{val}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </RS>
+                )}
 
                 {mcResultats.filter(r=>!r.erreur).length > 0 && (
                   <RS n={numerosRapport.nMc} title={t('gxS4MethodesComp')}>

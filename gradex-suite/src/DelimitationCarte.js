@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useI18n } from './useI18n';
+import { t } from './i18n';
 import { C_BLUE, C_TEAL, C_BORDER, C_RED, downloadChartCanvas } from './ui';
 
 const FONDS = {
@@ -80,7 +81,10 @@ function creerCarte(container, { interactive }) {
 
 function dessinerGeometrie(map, groupeRef, { contour, coursEau, exutoire, exutoireCandidat }) {
   if (groupeRef.current) { groupeRef.current.remove(); groupeRef.current = null; }
-  const groupe = L.layerGroup();
+  // L.featureGroup() (pas layerGroup()) : nécessaire pour .getBounds(),
+  // utilisé par zoomEtendue() afin de recadrer la vue à la demande, pas
+  // seulement à l'ouverture de la carte.
+  const groupe = L.featureGroup();
   let bounds = null;
 
   if (contour?.length > 2) {
@@ -203,7 +207,7 @@ function dessinerGrilleCanvas(ctx, map, rect) {
 function dessinerCartouche(ctx, map, rect, { titre, exutoire, aContour }) {
   // ── Titre ──
   ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  const texteTitre = titre || 'Délimitation du bassin versant';
+  const texteTitre = titre || t('carteTitreDelimitationGenerique');
   const largeurTitre = ctx.measureText(texteTitre).width;
   ctx.fillStyle = 'rgba(255,255,255,0.88)';
   ctx.fillRect(rect.width / 2 - largeurTitre / 2 - 10, 8, largeurTitre + 20, 26);
@@ -251,9 +255,9 @@ function dessinerCartouche(ctx, map, rect, { titre, exutoire, aContour }) {
 
   // ── Légende (haut-gauche, sous le panneau d'instructions si présent) ──
   const legendeItems = [
-    ...(aContour ? [['#ffb300', 'polygone', 'Limite du bassin versant']] : []),
-    ...(aContour ? [['#1565c0', 'ligne', 'Cours d\'eau (oueds)']] : []),
-    ...(exutoire ? [['#d32f2f', 'point', 'Exutoire']] : []),
+    ...(aContour ? [['#ffb300', 'polygone', t('carteLegendeLimiteBV')]] : []),
+    ...(aContour ? [['#1565c0', 'ligne', t('carteLegendeCoursEau')]] : []),
+    ...(exutoire ? [['#d32f2f', 'point', t('carteLegendeExutoire')]] : []),
   ];
   if (legendeItems.length) {
     const lx = rect.width - 210, ly = rect.height - 20 - legendeItems.length * 18 - 14;
@@ -279,7 +283,7 @@ function dessinerCartouche(ctx, map, rect, { titre, exutoire, aContour }) {
   // ── Coordonnées de l'exutoire ──
   if (exutoire) {
     const [elat, elon] = exutoire;
-    const texteCoord = `Exutoire : ${elat.toFixed(5)}°, ${elon.toFixed(5)}°`;
+    const texteCoord = `${t('carteLegendeExutoire')} : ${elat.toFixed(5)}°, ${elon.toFixed(5)}°`;
     ctx.font = '10.5px Arial'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
     const w = ctx.measureText(texteCoord).width;
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
@@ -443,6 +447,17 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     setFondActif(suivant);
   }
 
+  // "Zoom étendue" (comme AutoCAD) : recadre la vue sur l'ensemble du
+  // contour/tracé visible à tout moment, pas seulement à l'ouverture de la
+  // carte — utile après avoir pané/zoomé pour retrouver la vue d'ensemble.
+  function zoomEtendue() {
+    const map = fullMapObjRef.current;
+    if (!map) return;
+    const bounds = fullGroupeRef.current?.getBounds?.();
+    if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
+    else if (point) map.setView(point, 12);
+  }
+
   const confirmer = useCallback(async () => {
     if (!candidat || !onConfirmer) return;
     setConfirmErreur(null);
@@ -475,7 +490,7 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
 
   return (
     <div>
-      <div style={{ position: 'relative', height: 150, border: `1px solid ${C_BORDER}`, marginTop: 6, marginBottom: 4, background: '#eee' }}>
+      <div style={{ position: 'relative', height: 380, border: `1px solid ${C_BORDER}`, borderRadius: 4, overflow: 'hidden', marginTop: 6, marginBottom: 4, background: '#eee', boxShadow: '0 1px 4px rgba(0,0,0,.12)' }}>
         <div ref={previewDivRef} style={{ width: '100%', height: '100%' }} />
         <button onClick={() => setPlein(true)}
           title={t('carteAgrandir')}
@@ -504,6 +519,11 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={basculerFond} style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>
                   {fondActif === 'satellite' ? t('cartePlanBtn') : t('carteSatelliteBtn')}
+                </button>
+                <button onClick={zoomEtendue}
+                  title={t('carteZoomEtendueHint')}
+                  style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>
+                  ⛶ {t('carteZoomEtendueBtn')}
                 </button>
                 <button onClick={() => setGrilleActive(g => !g)}
                   title={t('carteGrilleHint')}

@@ -1,5 +1,5 @@
 // ============================================================
-//  LicenceGate.js — Écran d'activation de GRADEX.
+//  LicenceGate.js — Écran d'activation de HydroCrue.
 //  ─────────────────────────────────────────────────────────────
 //  Visuellement : repris tel quel de l'écran d'activation original
 //  de GRADEX (dégradé bleu #185FA5/#0C447C, carte centrée, secousse
@@ -9,8 +9,9 @@
 //  Identifiant Machine (et non IP), vérification via le serveur
 //  local (server.js -> src/services/licenseClient.js, Google
 //  Sheets + tolérance hors-ligne de 7 jours), ET prise en charge du
-//  mode ESSAI 24h (src/services/trialClient.js) qui affiche un badge
-//  et masque le formulaire de code (voir activation-status.essai).
+//  mode ESSAI (7 jours — src/services/trialClient.js, DUREE_ESSAI_HEURES)
+//  qui affiche un badge et masque le formulaire de code (voir
+//  activation-status.essai).
 //  La vérification se répète toutes les 60s (comme public/js/
 //  activation.js de BV-Calc), pour verrouiller l'essai en direct
 //  sans attendre un redémarrage.
@@ -39,9 +40,10 @@ async function postActiver(code) {
 function formaterRestant(heures, t) {
   if (heures == null || Number.isNaN(heures)) return '';
   if (heures < 1) return `${Math.max(1, Math.round(heures * 60))} min`;
-  // Math.ceil (pas floor) : un essai qui vient de démarrer affiche bien
-  // "24 h restant" (pas "23 h", qui donnait l'impression trompeuse que
-  // l'essai avait déjà entamé une heure).
+  // Math.ceil (pas floor) : un essai qui vient de démarrer affiche bien la
+  // durée pleine (ex. "7 j" / "24 h") et non une unité déjà entamée, ce qui
+  // donnerait l'impression trompeuse que l'essai a démarré plus tôt.
+  if (heures >= 24) return `${Math.ceil(heures / 24)} j`;
   return `${Math.ceil(heures)} h`;
 }
 
@@ -93,7 +95,7 @@ export default function LicenceGate({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Revérification périodique (60s, comme BV-Calc) : verrouille l'essai 24h
+  // Revérification périodique (60s, comme BV-Calc) : verrouille l'essai
   // en direct, tient le badge à jour, et applique une révocation serveur
   // sans attendre un redémarrage.
   useEffect(() => {
@@ -144,7 +146,7 @@ export default function LicenceGate({ children }) {
       <div style={{ background:'#fff', width:420, borderRadius:6, overflow:'hidden',
         boxShadow:'0 4px 24px rgba(0,0,0,0.13)' }}>
         <div style={{ background:'#8B1a1a', padding:'20px 24px', textAlign:'center' }}>
-          <div style={{ fontSize:22, fontWeight:700, color:'#fff' }}>⛔ GRADEX</div>
+          <div style={{ fontSize:22, fontWeight:700, color:'#fff' }}>⛔ HydroCrue</div>
           <div style={{ fontSize:11, color:'#ffaaaa', marginTop:4 }}>{t('gxLicAccesRefuse')}</div>
         </div>
         <div style={{ padding:'24px', textAlign:'center' }}>
@@ -225,7 +227,7 @@ export default function LicenceGate({ children }) {
               </button>
             ))}
           </div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#fff', letterSpacing:1 }}>GRADEX</div>
+          <div style={{ fontSize:26, fontWeight:700, color:'#fff', letterSpacing:1 }}>HydroCrue</div>
           <div style={{ fontSize:11, color:'#a0d0ff', marginTop:4 }}>{t('gxLicSousTitre')}</div>
         </div>
 

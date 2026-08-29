@@ -50,7 +50,7 @@ const PORT = process.env.PORT || 3000;
 // ---------------------------------------------------------------------
 function fetchJson(url, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'GRADEX/1.0 (bureau-etudes-hydrologie)' } }, (res) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'HydroCrue/1.0 (bureau-etudes-hydrologie)' } }, (res) => {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         res.resume();
         reject(new Error(`${url} → HTTP ${res.statusCode}`));
@@ -247,6 +247,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  GRADEX est lancé :  http://localhost:${PORT}\n`);
+  console.log(`\n  HydroCrue est lancé :  http://localhost:${PORT}\n`);
   console.log('  (Ctrl+C pour arrêter le serveur)\n');
 });

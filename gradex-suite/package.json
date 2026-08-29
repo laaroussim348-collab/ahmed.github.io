@@ -2,7 +2,7 @@
   "name": "gradex-suite",
   "version": "1.0.0",
   "private": true,
-  "description": "GRADEX — Crues & bassins versants : méthode GRADEX (Guillot & Duband, 1967) et méthodes du Guide technique d'assainissement routier 2020 (ex-BV-Calc), réunies dans un seul logiciel.",
+  "description": "HydroCrue — Crues & bassins versants : méthode GRADEX (Guillot & Duband, 1967) et méthodes du Guide technique d'assainissement routier 2020 (ex-BV-Calc), réunies dans un seul logiciel.",
   "homepage": "./",
   "main": "electron-main.mjs",
   "dependencies": {
@@ -61,7 +61,7 @@
   "build": {
     "extends": null,
     "appId": "com.gradexsuite.app",
-    "productName": "GRADEX",
+    "productName": "HydroCrue",
     "files": [
       "electron-main.mjs",
       "electron-main-essai.mjs",
@@ -83,7 +83,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "GRADEX"
+      "shortcutName": "HydroCrue"
     },
     "directories": {
       "output": "dist"
