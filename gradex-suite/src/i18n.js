@@ -39,7 +39,7 @@ const BV = {
     activationRequise: 'Activation requise.',
     refuseParServeur: 'Licence refusée par le serveur (désactivée ou expirée).',
     injoignableGrace: "Le serveur de licence n'a pas pu être contacté depuis trop longtemps. Reconnectez ce poste à internet, ou ressaisissez un code.",
-    essaiExpire: "La période d'essai (7 jours) est terminée. Contactez-nous pour obtenir une licence complète.",
+    essaiExpire: "La période d'essai (3 jours) est terminée. Contactez-nous pour obtenir une licence complète.",
     essaiHorlogeInvalide: "L'horloge de cet ordinateur semble avoir été modifiée. Impossible de continuer la version d'essai.",
     essaiBadge: "Version d'essai",
     identifiantTitre: 'Identifiant de ce poste',
@@ -245,7 +245,7 @@ const BV = {
     activationRequise: 'التفعيل مطلوب.',
     refuseParServeur: 'تم رفض الترخيص من طرف الخادم (معطّل أو منتهي الصلاحية).',
     injoignableGrace: 'تعذّر الاتصال بخادم الترخيص منذ مدة طويلة. أعد توصيل هذا الجهاز بالإنترنت، أو أدخل رمزا جديدا.',
-    essaiExpire: 'انتهت فترة التجربة المجانية (7 أيام). تواصل معنا للحصول على النسخة الكاملة.',
+    essaiExpire: 'انتهت فترة التجربة المجانية (3 أيام). تواصل معنا للحصول على النسخة الكاملة.',
     essaiHorlogeInvalide: 'يبدو أن ساعة هذا الجهاز تم تغييرها. تعذّرت متابعة النسخة التجريبية.',
     essaiBadge: 'نسخة تجريبية',
     identifiantTitre: 'معرّف هذا الجهاز',
@@ -451,7 +451,7 @@ const BV = {
     activationRequise: 'Activation required.',
     refuseParServeur: 'License rejected by the server (deactivated or expired).',
     injoignableGrace: 'The license server could not be reached for too long. Reconnect this station to the internet, or enter a code again.',
-    essaiExpire: 'The 7-day trial period has ended. Contact us to get a full license.',
+    essaiExpire: 'The 3-day trial period has ended. Contact us to get a full license.',
     essaiHorlogeInvalide: "This computer's clock appears to have been changed. The trial version cannot continue.",
     essaiBadge: 'Trial version',
     identifiantTitre: "This station's identifier",
@@ -657,7 +657,7 @@ const BV = {
     activationRequise: 'Activación requerida.',
     refuseParServeur: 'Licencia rechazada por el servidor (desactivada o caducada).',
     injoignableGrace: 'No se ha podido contactar con el servidor de licencias durante demasiado tiempo. Vuelva a conectar este equipo a internet, o introduzca un código de nuevo.',
-    essaiExpire: 'El período de prueba (7 días) ha terminado. Contáctenos para obtener una licencia completa.',
+    essaiExpire: 'El período de prueba (3 días) ha terminado. Contáctenos para obtener una licencia completa.',
     essaiHorlogeInvalide: 'El reloj de este equipo parece haber sido modificado. No se puede continuar con la versión de prueba.',
     essaiBadge: 'Versión de prueba',
     identifiantTitre: 'Identificador de este equipo',
@@ -867,7 +867,7 @@ const GX = {
   fr: {
     // -- Marque / bandeau --
     gxVersion: 'Débits de Crue & Bassins Versants — v1.0',
-    gxBadgeEssai: "essai 7j",
+    gxBadgeEssai: "essai 3j",
 
     // -- Licence (écran d'activation GRADEX, réutilise les clés BV-Calc titre/identifiantTitre/etc.) --
     gxLicSousTitre: 'Guillot & Duband, 1967 — Guide technique d\'assainissement routier',
@@ -882,6 +882,8 @@ const GX = {
     gxLicVerification: 'Vérification de la licence…',
     gxLicNonTransferable: 'Licence nominative — non transférable',
     gxLicRestant: 'restant',
+    gxLicContacterHint: "Communiquez cet identifiant à l'éditeur (WhatsApp, email…) — il active votre poste à distance depuis sa plateforme. Aucune saisie de code n'est nécessaire ici : l'application se débloque automatiquement dès l'activation.",
+    gxLicVerifierMaintenant: 'Vérifier maintenant',
 
     // -- Menu Fichier / Éditer --
     mFichier: 'Fichier', mEditer: 'Éditer',
@@ -1033,7 +1035,7 @@ const GX = {
 
   ar: {
     gxVersion: 'الفيضانات والأحواض المائية — الإصدار 1.0',
-    gxBadgeEssai: 'تجربة 7 أيام',
+    gxBadgeEssai: 'تجربة 3 أيام',
 
     gxLicSousTitre: 'Guillot & Duband، 1967 — الدليل التقني للتطهير الطرقي',
     gxLicClient: 'العميل', gxLicStatutActif: 'مفعّلة',
@@ -1047,6 +1049,8 @@ const GX = {
     gxLicVerification: 'جارٍ التحقق من الترخيص…',
     gxLicNonTransferable: 'ترخيص اسمي — غير قابل للتحويل',
     gxLicRestant: 'متبقٍ',
+    gxLicContacterHint: 'أرسل هذا المعرّف إلى الناشر (واتساب، بريد إلكتروني...) — سيقوم بتفعيل جهازك عن بعد من منصته. لا حاجة لإدخال أي رمز هنا: يُفعَّل التطبيق تلقائيًا فور التفعيل.',
+    gxLicVerifierMaintenant: 'تحقق الآن',
 
     mFichier: 'ملف', mEditer: 'تحرير',
     mNouveau: 'جديد', mOuvrir: 'فتح...', mEnregistrer: 'حفظ', mEnregistrerSous: 'حفظ باسم...',
@@ -1185,7 +1189,7 @@ const GX = {
 
   en: {
     gxVersion: 'Floods & Watersheds — v1.0',
-    gxBadgeEssai: '7-day trial',
+    gxBadgeEssai: '3-day trial',
 
     gxLicSousTitre: 'Guillot & Duband, 1967 — Road Drainage Technical Guide',
     gxLicClient: 'Client', gxLicStatutActif: 'Active',
@@ -1199,6 +1203,8 @@ const GX = {
     gxLicVerification: 'Checking license…',
     gxLicNonTransferable: 'Named license — not transferable',
     gxLicRestant: 'left',
+    gxLicContacterHint: 'Send this ID to the vendor (WhatsApp, email…) — they activate your machine remotely from their platform. No code to enter here: the app unlocks automatically once activated.',
+    gxLicVerifierMaintenant: 'Check now',
 
     mFichier: 'File', mEditer: 'Edit',
     mNouveau: 'New', mOuvrir: 'Open...', mEnregistrer: 'Save', mEnregistrerSous: 'Save as...',
@@ -1337,7 +1343,7 @@ const GX = {
 
   es: {
     gxVersion: 'Crecidas y Cuencas — v1.0',
-    gxBadgeEssai: 'prueba 7d',
+    gxBadgeEssai: 'prueba 3d',
 
     gxLicSousTitre: 'Guillot & Duband, 1967 — Guía Técnica de Drenaje Vial',
     gxLicClient: 'Cliente', gxLicStatutActif: 'Activa',
@@ -1351,6 +1357,8 @@ const GX = {
     gxLicVerification: 'Comprobando la licencia…',
     gxLicNonTransferable: 'Licencia nominativa — no transferible',
     gxLicRestant: 'restante',
+    gxLicContacterHint: 'Envíe este identificador al proveedor (WhatsApp, correo…) — activará su equipo de forma remota desde su plataforma. No es necesario introducir ningún código aquí: la aplicación se desbloquea automáticamente al activarse.',
+    gxLicVerifierMaintenant: 'Comprobar ahora',
 
     mFichier: 'Archivo', mEditer: 'Editar',
     mNouveau: 'Nuevo', mOuvrir: 'Abrir...', mEnregistrer: 'Guardar', mEnregistrerSous: 'Guardar como...',

@@ -1,18 +1,22 @@
 /**
- * electron-main.mjs — point d'entrée de l'application de bureau HydroCrue.
+ * electron-main.mjs — point d'entrée UNIQUE de l'application de bureau
+ * HydroCrue (essai ET licence — plus de build séparée, voir README).
  * -----------------------------------------------------------------------
  * Démarre le serveur local (server.mjs) et ouvre une fenêtre native pointée
  * dessus — comme un vrai logiciel installé (HEC-RAS, AutoCAD, Global
- * Mapper...), pas un site à ouvrir dans un navigateur. Repris de BV-Calc :
- * même mécanique de licence, adaptée au nom du produit fusionné.
+ * Mapper...), pas un site à ouvrir dans un navigateur. Le premier lancement
+ * démarre automatiquement un essai gratuit (voir
+ * src/services/activationClient.js, DUREE_ESSAI_HEURES) ; l'éditeur active
+ * le poste à distance (par Identifiant Machine, depuis admin/licences-admin.html)
+ * une fois le paiement reçu — aucune réinstallation, aucun code à saisir.
  * -----------------------------------------------------------------------
  */
 import { app, BrowserWindow, Menu } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Doit être défini AVANT que server.mjs (et transitivement licenseClient.js)
-// ne s'exécute — voir src/services/licenseClient.js.
+// Doit être défini AVANT que server.mjs (et transitivement activationClient.js)
+// ne s'exécute — voir src/services/activationClient.js.
 process.env.GRADEX_DATA_DIR = app.getPath('userData');
 await import('./server.mjs'); // démarre l'écoute sur PORT (effet de bord, voir server.mjs)
 
