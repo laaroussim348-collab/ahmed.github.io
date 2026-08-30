@@ -36,7 +36,7 @@ export default function LocalisationDelimitation({ v, setV, onImportToGradex, on
     setGeoLoading(true);
     setGeoMsg({ tone:'info', html:t('geoEnCours') });
     const avertissements = [];
-    let ok = false, okDelineation = false, html = '';
+    let ok = false, okDelineation = false, html = '', erreurDelineation = null;
     try {
       const rep = await fetch(`/api/delineation?lat=${lat}&lon=${lon}`);
       const data = await rep.json();
@@ -65,7 +65,7 @@ export default function LocalisationDelimitation({ v, setV, onImportToGradex, on
       // téléchargement de la série Pjmax (Open-Meteo ERA5) pour ce même point,
       // sans clic manuel séparé sur "Importer depuis Open-Meteo ERA5".
       onImportToGradex?.({ surface: data.surface_km2, lat, lon });
-    } catch (e) { html += `❌ ${t('erreur')} ${e.message}`; }
+    } catch (e) { erreurDelineation = e.message; html += `❌ ${t('erreur')} ${e.message}`; }
 
     try {
       const rep = await fetch(`/api/pluviometrie?lat=${lat}&lon=${lon}`);
@@ -94,7 +94,12 @@ export default function LocalisationDelimitation({ v, setV, onImportToGradex, on
     if (avertissements.length) html += '<br>' + avertissements.map(a => `⚠️ ${a}`).join('<br>');
     setGeoMsg({ tone: ok ? 'ok' : 'error', html });
     setGeoLoading(false);
-    if (!okDelineation) throw new Error(t('fixEchecDelimitation'));
+    // Message précis (raison réelle du serveur) propagé jusqu'à la carte
+    // plein écran (DelimitationCarte.confirmErreur), pas seulement affiché
+    // ici dans le panneau réduit — sinon l'utilisateur qui clique
+    // directement sur la carte plein écran ne voit qu'un message générique
+    // sans savoir pourquoi ça a échoué.
+    if (!okDelineation) throw new Error(erreurDelineation || t('fixEchecDelimitation'));
   }
 
   function importerVersGradex() {

@@ -427,7 +427,11 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
     else if (point) map.setView(point, 12);
 
-    map.on('click', (e) => setCandidat({ lat: e.latlng.lat, lon: e.latlng.lng }));
+    // Un nouveau point cliqué efface le message d'échec d'une tentative
+    // précédente (sinon il reste affiché à côté du nouveau point choisi,
+    // comme si la nouvelle tentative avait déjà échoué elle aussi) — la vue
+    // de la carte (zoom/position) n'est elle jamais réinitialisée ici.
+    map.on('click', (e) => { setCandidat({ lat: e.latlng.lat, lon: e.latlng.lng }); setConfirmErreur(null); });
 
     setTimeout(() => map.invalidateSize(), 50);
     return () => {
