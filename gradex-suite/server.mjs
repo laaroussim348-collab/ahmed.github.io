@@ -102,14 +102,26 @@ async function apiActiver(req, res) {
 // ---------------------------------------------------------------------
 async function apiDelineation(lat, lon, res) {
   try {
-    // Délais généreux (60s) : un grand bassin versant demande à mghydro.com
-    // un calcul plus long qu'un petit BV routier — un délai trop court le
-    // ferait échouer systématiquement ("la délimitation des grands BV ne
-    // marche pas").
-    const [watershedJson, riversJson] = await Promise.all([
-      fetchJson(buildWatershedUrl(lat, lon), 60000),
-      fetchJson(buildUpstreamRiversUrl(lat, lon), 60000),
-    ]);
+    // Grands bassins versants : deux corrections par rapport à la version
+    // précédente (qui échouait déjà systématiquement pour les grands BV
+    // malgré un délai de 60s) —
+    //  1) mghydro.com demande explicitement de NE PAS envoyer de requêtes
+    //     en parallèle ("avoid making asynchronous requests, add a pause of
+    //     5 seconds between requests" — mghydro.com/please-limit-your-
+    //     global-watershed-api-usage-rate/) : watershed_api et
+    //     upstream_rivers_api étaient appelées via Promise.all (en même
+    //     temps), ce qui expose au throttling — surtout pour un grand BV où
+    //     chaque appel prend déjà plus longtemps, donc plus de chances de
+    //     chevauchement. Appels désormais SÉQUENTIELS, espacés de 5s.
+    //  2) Délai par requête porté à 90s (au lieu de 60s) : un grand bassin
+    //     versant en précision "high" demande à mghydro.com de traiter des
+    //     rasters flow-accumulation/flow-direction bien plus étendus qu'un
+    //     petit BV routier (mghydro.com repasse lui-même en basse précision
+    //     seulement au-delà de 50 000 km², donc la plupart des grands BV
+    //     marocains restent en haute précision, plus lente).
+    const watershedJson = await fetchJson(buildWatershedUrl(lat, lon), 90000);
+    await new Promise((r) => setTimeout(r, 5000)); // pause demandée par mghydro.com entre 2 requêtes
+    const riversJson = await fetchJson(buildUpstreamRiversUrl(lat, lon), 90000);
     const watershed = parseWatershedResponse(watershedJson);
     const rivers = parseRiversResponse(riversJson);
     const analyse = analyserDelimitation(watershed, rivers, [lat, lon]);
