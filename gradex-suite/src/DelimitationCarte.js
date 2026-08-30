@@ -7,13 +7,19 @@
 //  réseau hydrographique (mghydro.com) sont dessinés par-dessus
 //  le fond de carte (façon ArcGIS), avec export en image PNG.
 //
-//  Fond de carte : imagerie satellite Esri World Imagery (par
-//  défaut, CORS activé) + option "plan" CARTO Voyager (CORS
-//  activé aussi) — les deux permettent l'export image (contrairement
-//  aux tuiles OpenStreetMap standard, qui ne renvoient pas
-//  d'en-têtes CORS et empêcheraient la lecture du canevas). Un calque de
-//  noms de lieux (CARTO Voyager Labels) est superposé au satellite (qui
-//  n'a lui-même aucun texte) pour identifier facilement l'endroit voulu.
+//  Fond de carte : imagerie satellite Esri World Imagery uniquement (CORS
+//  activé, ce qui permet l'export image — contrairement aux tuiles
+//  OpenStreetMap standard, qui ne renvoient pas d'en-têtes CORS et
+//  empêcheraient la lecture du canevas). Un calque de noms de lieux (CARTO
+//  Voyager Labels, transparent) est superposé par-dessus pour identifier
+//  facilement l'endroit voulu.
+//
+//  Couverture Esri incomplète par endroits (zones rurales/éloignées) : au
+//  lieu d'afficher la tuile de remplacement "Map data not yet available"
+//  qu'Esri renvoie pour ces cas (texte gênant à l'écran — retour
+//  utilisateur du 30/08/2026), chaque tuile chargée est examinée et
+//  masquée si elle correspond à ce visuel (voir estTuilePlaceholder) — le
+//  fond reste alors simplement vide à cet endroit, sans texte.
 // ============================================================
 import { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
@@ -22,23 +28,14 @@ import { useI18n } from './useI18n';
 import { t } from './i18n';
 import { C_BLUE, C_TEAL, C_BORDER, C_RED, downloadChartCanvas } from './ui';
 
-const FONDS = {
-  satellite: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
-  },
-  plan: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-    subdomains: 'abcd',
-  },
+const SATELLITE = {
+  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
 };
 
 // Calque de noms de lieux (villes, douars, routes...), fond transparent, à
 // superposer à l'imagerie satellite (qui n'a aucun texte) pour identifier
 // l'endroit voulu.
-// Le fond "plan" CARTO Voyager a déjà ses propres labels, donc ce calque ne
-// s'ajoute que par-dessus le satellite (voir ajouterFond).
 const LABELS = {
   url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
   attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -54,27 +51,68 @@ function iconePoint(couleur, taille = 16) {
   });
 }
 
-// maxZoom 19 (au lieu de 18) : gain de détail au dézoom max sur les deux fonds
-// (Esri World Imagery et CARTO Voyager servent tous deux jusqu'à ce niveau) —
-// demande utilisateur "je peux zoomer plus".
+// Détecte la tuile de remplacement "Map data not yet available" qu'Esri
+// renvoie (avec un HTTP 200, pas une erreur réseau — errorTileUrl ne peut
+// donc pas la voir) pour les tuiles sans imagerie disponible à cet endroit
+// à ce niveau de zoom. Deux indices combinés (aucun des deux seul n'est
+// fiable) :
+//  1. Poids transféré très faible : une vraie photo aérienne (texture
+//     naturelle, beaucoup de détail) compresse toujours à plusieurs
+//     dizaines de Ko ; l'image de remplacement (fond uni + texte) ne pèse
+//     que quelques Ko.
+//  2. Couleur moyenne gris neutre et quasi uniforme : élimine les tuiles
+//     réellement uniformes mais colorées (mer, lac, désert) qui pourraient
+//     sinon être prises à tort pour le placeholder à cause du critère 1
+//     seul.
+function estTuilePlaceholder(img) {
+  try {
+    const entrees = performance.getEntriesByName(img.src);
+    const poids = entrees.length ? entrees[entrees.length - 1].encodedBodySize : 0;
+    if (!(poids > 0) || poids >= 8000) return false;
+
+    const c = document.createElement('canvas');
+    c.width = 8; c.height = 8;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, 8, 8);
+    const { data } = ctx.getImageData(0, 0, 8, 8);
+    let sR = 0, sG = 0, sB = 0, ecartMax = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      sR += r; sG += g; sB += b;
+      ecartMax = Math.max(ecartMax, Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+    }
+    const n = data.length / 4;
+    const [mR, mG, mB] = [sR / n, sG / n, sB / n];
+    const grisNeutre = mR > 180 && mR < 225 && mG > 180 && mG < 225 && mB > 180 && mB < 225;
+    return ecartMax < 12 && grisNeutre;
+  } catch {
+    return false; // CORS/canvas indisponible : on n'essaie pas de masquer, tant pis
+  }
+}
+
+// maxZoom 19 (au lieu de 18) : gain de détail au dézoom max — demande
+// utilisateur "je peux zoomer plus". La couverture Esri n'est pas garantie
+// jusque-là partout (voir estTuilePlaceholder), mais plafonner plus bas
+// pénaliserait sans raison les zones où elle l'est.
 const ZOOM_MAX = 19;
-function ajouterFond(map, id) {
-  const fond = L.tileLayer(FONDS[id].url, {
-    attribution: FONDS[id].attribution,
-    subdomains: FONDS[id].subdomains || 'abc',
+function ajouterFond(map) {
+  const fond = L.tileLayer(SATELLITE.url, {
+    attribution: SATELLITE.attribution,
     crossOrigin: true,
     maxZoom: ZOOM_MAX,
   }).addTo(map);
-  // Le fond "plan" a déjà ses propres noms de lieux (base CARTO Voyager) ;
-  // seul le satellite (sans aucun texte) a besoin du calque de labels.
-  if (id === 'satellite') {
-    L.tileLayer(LABELS.url, {
-      attribution: LABELS.attribution,
-      subdomains: LABELS.subdomains,
-      crossOrigin: true,
-      maxZoom: ZOOM_MAX,
-    }).addTo(map); // pane par défaut (tilePane) : sous le tracé du bassin, au-dessus du satellite
-  }
+  fond.on('tileload', (e) => {
+    // La ressource n'apparaît dans les Performance Entries qu'une fois la
+    // requête réseau terminée — c'est déjà le cas à cet instant (tileload
+    // ne se déclenche qu'après chargement complet), pas besoin d'attendre.
+    if (estTuilePlaceholder(e.tile)) e.tile.style.visibility = 'hidden';
+  });
+  L.tileLayer(LABELS.url, {
+    attribution: LABELS.attribution,
+    subdomains: LABELS.subdomains,
+    crossOrigin: true,
+    maxZoom: ZOOM_MAX,
+  }).addTo(map); // pane par défaut (tilePane) : sous le tracé du bassin, au-dessus du satellite
   return fond;
 }
 
@@ -99,12 +137,7 @@ function creerCarte(container, { interactive }) {
   // Contrôle de zoom en bas à gauche : le coin haut-gauche est réservé au
   // panneau d'instructions (voir JSX), pour éviter le chevauchement.
   if (interactive) L.control.zoom({ position: 'bottomleft' }).addTo(map);
-  // "Plan" (CARTO Voyager) par défaut, pas "Satellite" (Esri) : l'imagerie
-  // satellite Esri a des trous de couverture par endroits (notamment zones
-  // rurales/éloignées), qui s'affichent comme des tuiles "Map data not yet
-  // available" — gênant et déroutant. CARTO Voyager est une carte
-  // vectorielle sans ce problème, et affiche déjà les noms de lieux.
-  ajouterFond(map, 'plan');
+  ajouterFond(map);
   return { map };
 }
 
@@ -389,7 +422,6 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
 
   const [plein, setPlein] = useState(false);
   const [candidat, setCandidat] = useState(null); // {lat, lon} choisi par clic, en attente de confirmation
-  const [fondActif, setFondActif] = useState('plan');
   const [exportMsg, setExportMsg] = useState(null);
   const [confirmErreur, setConfirmErreur] = useState(null);
   const [grilleActive, setGrilleActive] = useState(true);
@@ -471,15 +503,6 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
     });
   }, [candidat]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function basculerFond() {
-    const map = fullMapObjRef.current;
-    if (!map) return;
-    const suivant = fondActif === 'satellite' ? 'plan' : 'satellite';
-    map.eachLayer((l) => { if (l instanceof L.TileLayer) map.removeLayer(l); });
-    ajouterFond(map, suivant);
-    setFondActif(suivant);
-  }
-
   // "Zoom étendue" (comme AutoCAD) : recadre la vue sur l'ensemble du
   // contour/tracé visible à tout moment, pas seulement à l'ouverture de la
   // carte — utile après avoir pané/zoomé pour retrouver la vue d'ensemble.
@@ -550,9 +573,6 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, pointerEvents: 'auto' }}>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={basculerFond} style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>
-                  {fondActif === 'satellite' ? t('cartePlanBtn') : t('carteSatelliteBtn')}
-                </button>
                 <button onClick={zoomEtendue}
                   title={t('carteZoomEtendueHint')}
                   style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: `1px solid ${C_BORDER}`, borderRadius: 3, cursor: 'pointer' }}>
