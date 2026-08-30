@@ -161,7 +161,7 @@ export async function verifierActivation() {
       }
       return { active: true, machineId, expiresAt: resultat.expiresAt || null, source: 'licence' };
     }
-    return { active: false, raison: resultat.raison || 'essai_expire', machineId, expiresAt: resultat.trialExpiresAt || null };
+    return { active: false, raison: resultat.raison || 'essai_expire', machineId, expiresAt: resultat.expiresAt || resultat.trialExpiresAt || null };
   } catch {
     // Serveur injoignable : repli hors-ligne (tolérance limitée dans le temps).
     return reponseHorsLigne(etat, machineId, maintenant);
@@ -173,6 +173,14 @@ function reponseHorsLigne(etat, machineId, maintenant) {
   // hors-ligne classique (PERIODE_GRACE_JOURS depuis le dernier contrôle
   // réussi) — même logique que l'ancien licenseClient.js.
   if (etat.dernierStatut === 'active' && etat.dernierControleOk && etat.dernierControleLe) {
+    // Licence à durée limitée déjà expirée au moment du dernier contrôle
+    // réussi : la période de grâce hors-ligne ne doit pas prolonger l'accès
+    // au-delà de cette date (sinon rester hors-ligne après expiration
+    // suffirait à garder l'accès indéfiniment). Une licence permanente n'a
+    // pas de dernierExpiresAt : non concernée par ce test.
+    if (etat.dernierExpiresAt && new Date(etat.dernierExpiresAt).getTime() <= maintenant) {
+      return { active: false, raison: 'licence_expiree', machineId, expiresAt: etat.dernierExpiresAt };
+    }
     const joursDepuis = (maintenant - new Date(etat.dernierControleLe).getTime()) / 86400000;
     if (joursDepuis <= PERIODE_GRACE_JOURS) {
       return {
