@@ -49,6 +49,7 @@ export default function LicenceGate({ children }) {
     refuse_par_serveur: t('refuseParServeur'),
     serveur_injoignable_periode_grace_depassee: t('injoignableGrace'),
     essai_expire: t('essaiExpire'),
+    licence_expiree: t('licenceExpiree'),
   };
 
   const verifier = useCallback(async () => {

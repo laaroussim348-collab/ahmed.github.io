@@ -257,7 +257,7 @@ function getSheet_() {
   let sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(["machineId","firstSeen","lastSeen","trialExpiresAt","status","client","activatedAt","note"]);
+    sheet.appendRow(["machineId","firstSeen","lastSeen","trialExpiresAt","status","client","activatedAt","note","licenseExpiresAt"]);
   }
   return sheet;
 }
@@ -278,7 +278,15 @@ function doCheckin_(sheet, p) {
     const status = (data[i][4]||"trial").toString().toLowerCase();
 
     if (status === "revoked") return out({ active:false, status:"revoked", raison:"refuse_par_serveur" });
-    if (status === "active")  return out({ active:true,  status:"active" });
+    if (status === "active") {
+      const licenseExpiresAtRaw = data[i][8]; // colonne I
+      if (licenseExpiresAtRaw) {
+        const licenseExpiresAt = new Date(licenseExpiresAtRaw);
+        if (now < licenseExpiresAt) return out({ active:true, status:"active", expiresAt: licenseExpiresAt.toISOString() });
+        return out({ active:false, status:"active", raison:"licence_expiree", expiresAt: licenseExpiresAt.toISOString() });
+      }
+      return out({ active:true, status:"active" }); // pas de date = licence permanente
+    }
 
     const trialExpiresAt = new Date(data[i][3]);
     if (now < trialExpiresAt) return out({ active:true, status:"trial", trialExpiresAt: trialExpiresAt.toISOString() });
@@ -292,15 +300,19 @@ function doCheckin_(sheet, p) {
 }
 
 // ── ACTIVATE : un clic dans l'outil admin, aucun code. Clé admin requise. ──
+// p.days : durée d'activation en jours (0 ou absent = licence permanente).
 function doActivate_(sheet, p) {
   if (p.key !== ADMIN_KEY) return out({ success:false, message:"Non autorisé (clé admin incorrecte)." });
   const machineId = (p.machineId || "").trim().toUpperCase();
+  const jours = parseInt(p.days, 10) || 0;
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if ((data[i][0]||"").toString().trim().toUpperCase() === machineId) {
-      sheet.getRange(i + 1, 5).setValue("active");
-      sheet.getRange(i + 1, 7).setValue(new Date());
-      if (p.client) sheet.getRange(i + 1, 6).setValue(p.client);
+      const rowNum = i + 1;
+      sheet.getRange(rowNum, 5).setValue("active");
+      sheet.getRange(rowNum, 7).setValue(new Date());
+      if (p.client) sheet.getRange(rowNum, 6).setValue(p.client);
+      sheet.getRange(rowNum, 9).setValue(jours > 0 ? new Date(Date.now() + jours * 86400000) : "");
       return out({ success: true });
     }
   }
@@ -334,6 +346,7 @@ function doList_(sheet, p) {
       machineId: r[0], firstSeen: toIso_(r[1]), lastSeen: toIso_(r[2]),
       trialExpiresAt: toIso_(r[3]), status: (r[4]||"trial").toString().toLowerCase(),
       client: r[5] || "", activatedAt: toIso_(r[6]), note: r[7] || "",
+      licenseExpiresAt: toIso_(r[8]),
     });
   }
   return out({ success:true, rows: rows });
@@ -442,7 +455,15 @@ async function refreshList() {
 function statusInfo(row) {
   const now = new Date();
   if (row.status === "revoked") return { key:"revoked", label:"⛔ Révoqué", cls:"b-rev", pending:false };
-  if (row.status === "active")  return { key:"active",  label:"✅ Actif",   cls:"b-act", pending:false };
+  if (row.status === "active") {
+    const lexp = row.licenseExpiresAt ? new Date(row.licenseExpiresAt) : null;
+    if (!lexp) return { key:"active", label:"✅ Actif — permanent", cls:"b-act", pending:false };
+    if (now < lexp) {
+      const dLeft = Math.ceil((lexp - now) / 86400000);
+      return { key:"active", label:"✅ Actif — " + dLeft + " j restant(s)", cls:"b-act", pending:false };
+    }
+    return { key:"active_expired", label:"⚠️ Licence expirée le " + lexp.toLocaleDateString("fr-FR"), cls:"b-pend", pending:true };
+  }
   // trial
   const exp = row.trialExpiresAt ? new Date(row.trialExpiresAt) : null;
   if (exp && now < exp) {
@@ -453,13 +474,22 @@ function statusInfo(row) {
   return { key:"pending", label:"⏳ En attente de paiement", cls:"b-pend", pending:true };
 }
 
+// Options de durée d'activation proposées dans l'outil admin (jours ; 0 = permanent).
+const DUREES_LICENCE = [
+  { jours: 30,  label: "1 mois" },
+  { jours: 180, label: "6 mois" },
+  { jours: 365, label: "1 an" },
+  { jours: 0,   label: "Permanent" },
+  { jours: -1,  label: "Personnaliser…" }, // -1 = déclenche le champ "jours" ci-contre
+];
+
 function renderTable() {
   const wrap = document.getElementById("tableWrap");
   const onlyPending = document.getElementById("onlyPending").checked;
   let list = rows.map(r => ({ ...r, _st: statusInfo(r) }));
   if (onlyPending) list = list.filter(r => r._st.pending);
-  // En attente de paiement en premier, puis essai (le plus proche d'expirer d'abord), puis actifs, puis révoqués.
-  const ordre = { pending:0, trial:1, active:2, revoked:3 };
+  // En attente de paiement (+ licences expirées) en premier, puis essai (le plus proche d'expirer d'abord), puis actifs, puis révoqués.
+  const ordre = { pending:0, active_expired:0, trial:1, active:2, revoked:3 };
   list.sort((a,b) => (ordre[a._st.key]-ordre[b._st.key]) || (new Date(b.lastSeen||0) - new Date(a.lastSeen||0)));
 
   document.getElementById("jCount").textContent = list.length;
@@ -474,6 +504,10 @@ function renderTable() {
 
   list.forEach(r => {
     const st = r._st;
+    const activerLabel = (st.key === "active") ? "🔄 Renouveler" : "✅ Activer";
+    const durOptions = DUREES_LICENCE.map(d =>
+      '<option value="' + d.jours + '"' + (d.jours === 365 ? ' selected' : '') + '>' + d.label + '</option>'
+    ).join('');
     html += '<tr class="' + (st.pending ? 'row-pending' : '') + '">' +
       '<td class="mono" style="font-weight:700;color:var(--water-dark)">' + esc(r.machineId) + '</td>' +
       '<td style="white-space:nowrap;font-size:10px">' + fmtDate(r.firstSeen) + '</td>' +
@@ -481,8 +515,13 @@ function renderTable() {
       '<td><span class="badge2 ' + st.cls + '">' + st.label + '</span></td>' +
       '<td style="font-size:10.5px;color:var(--ink-soft);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.client||r.note||"") + '</td>' +
       '<td><div class="actions">' +
-        (st.key !== "active" ? '<button class="btn btn-ok btn-sm" onclick="doActivateRow(\'' + esc(r.machineId) + '\')">✅ Activer</button>' : '') +
-        (st.key !== "revoked" ? '<button class="btn btn-danger btn-sm" onclick="doRevokeRow(\'' + esc(r.machineId) + '\')">⛔ Révoquer</button>' : '<button class="btn btn-ghost btn-sm" onclick="doReactivateRow(\'' + esc(r.machineId) + '\')">↩️ Lever la révocation</button>') +
+        '<select class="dur-sel" id="dur-' + esc(r.machineId) + '" onchange="onDureeChange(\'' + esc(r.machineId) + '\')" ' +
+          'style="font-size:10.5px;padding:3px 4px;border:1px solid var(--line-strong);border-radius:3px;max-width:112px" ' +
+          'title="Durée d\'activation">' + durOptions + '</select>' +
+        '<input type="number" min="1" id="jours-' + esc(r.machineId) + '" placeholder="jours" ' +
+          'style="display:none;width:56px;font-size:10.5px;padding:3px 4px;border:1px solid var(--line-strong);border-radius:3px" />' +
+        '<button class="btn btn-ok btn-sm" onclick="doActivateRow(\'' + esc(r.machineId) + '\')">' + activerLabel + '</button>' +
+        (st.key !== "revoked" ? '<button class="btn btn-danger btn-sm" onclick="doRevokeRow(\'' + esc(r.machineId) + '\')">⛔ Révoquer</button>' : '') +
         '<button class="btn btn-ghost btn-sm" onclick="copyId(\'' + esc(r.machineId) + '\')" title="Copier l\'identifiant">📋</button>' +
       '</div></td></tr>';
   });
@@ -504,20 +543,32 @@ async function callAction(action, machineId, extra) {
   return r.json();
 }
 
+function onDureeChange(machineId) {
+  const sel = document.getElementById("dur-" + machineId);
+  const inp = document.getElementById("jours-" + machineId);
+  if (!sel || !inp) return;
+  inp.style.display = (sel.value === "-1") ? "inline-block" : "none";
+}
+
 async function doActivateRow(machineId) {
-  const d = await callAction("activate", machineId);
-  if (d.success) { showToast("Poste activé — débloqué automatiquement sous 60s côté client."); refreshList(); }
-  else showToast(d.message || "Échec de l'activation.");
+  const sel = document.getElementById("dur-" + machineId);
+  let jours = sel ? parseInt(sel.value, 10) : 365;
+  if (jours === -1) {
+    const inp = document.getElementById("jours-" + machineId);
+    jours = parseInt(inp && inp.value, 10);
+    if (!jours || jours < 1) { showToast("Indiquez un nombre de jours personnalisé valide (≥ 1)."); return; }
+  }
+  const d = await callAction("activate", machineId, { days: jours });
+  if (d.success) {
+    const dureeTxt = jours > 0 ? (jours + " jour(s)") : "permanent";
+    showToast("Poste activé (" + dureeTxt + ") — débloqué automatiquement sous 60s côté client.");
+    refreshList();
+  } else showToast(d.message || "Échec de l'activation.");
 }
 async function doRevokeRow(machineId) {
   const d = await callAction("revoke", machineId, { status:"revoked" });
   if (d.success) { showToast("Poste révoqué."); refreshList(); }
   else showToast(d.message || "Échec de la révocation.");
-}
-async function doReactivateRow(machineId) {
-  const d = await callAction("revoke", machineId, { status:"active" });
-  if (d.success) { showToast("Révocation levée — poste réactivé."); refreshList(); }
-  else showToast(d.message || "Échec.");
 }
 function copyId(machineId) { navigator.clipboard.writeText(machineId).then(()=>showToast("Identifiant copié")); }
 
@@ -527,7 +578,7 @@ function updateStats() {
   rows.forEach(r => {
     const st = statusInfo(r).key;
     if (st === "trial") trial++;
-    else if (st === "pending") pending++;
+    else if (st === "pending" || st === "active_expired") pending++;
     else if (st === "active") active++;
   });
   document.getElementById("sTotal").textContent = rows.length;

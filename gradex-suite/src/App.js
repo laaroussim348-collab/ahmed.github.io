@@ -1001,6 +1001,14 @@ function MainApp() {
     <div dir={rtl ? "rtl" : "ltr"} style={{ fontFamily:"Arial,sans-serif", minHeight:"100vh", background:"#e8e8e8",
       display:"flex", flexDirection:"column", fontSize:12 }}>
 
+      {/* ── BARRE TITRE + MENU + BARRE D'OUTILS + ONGLETS : figés en haut de
+          l'écran au défilement (position:sticky) — la fenêtre entière défile
+          quand un onglet est long (le conteneur racine n'a qu'un minHeight,
+          pas un height fixe, donc le CONTENU ci-dessous ne scrolle pas seul
+          en interne) ; Copier/Coller notamment doivent rester accessibles
+          sans remonter en haut de page. */}
+      <div style={{ position:"sticky", top:0, zIndex:200 }}>
+
       {/* ── BARRE TITRE ── */}
       <div style={{ background:"linear-gradient(180deg,#2a6cc0 0%,#1a4a8a 100%)",
         color:"#fff", display:"flex", alignItems:"center", height:40,
@@ -1113,6 +1121,7 @@ function MainApp() {
         ))}
       </div>
 
+      </div>
       {/* ── CONTENU ── */}
       <div style={{ flex:1, overflow:"auto", background:"#fff", padding:"14px 18px" }}>
 

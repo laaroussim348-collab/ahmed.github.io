@@ -11,7 +11,9 @@
 //  défaut, CORS activé) + option "plan" CARTO Voyager (CORS
 //  activé aussi) — les deux permettent l'export image (contrairement
 //  aux tuiles OpenStreetMap standard, qui ne renvoient pas
-//  d'en-têtes CORS et empêcheraient la lecture du canevas).
+//  d'en-têtes CORS et empêcheraient la lecture du canevas). Un calque de
+//  noms de lieux (CARTO Voyager Labels) est superposé au satellite (qui
+//  n'a lui-même aucun texte) pour identifier facilement l'endroit voulu.
 // ============================================================
 import { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
@@ -32,6 +34,17 @@ const FONDS = {
   },
 };
 
+// Calque de noms de lieux (villes, douars, routes...), fond transparent, à
+// superposer à l'imagerie satellite (qui n'a aucun texte) pour identifier
+// l'endroit voulu.
+// Le fond "plan" CARTO Voyager a déjà ses propres labels, donc ce calque ne
+// s'ajoute que par-dessus le satellite (voir ajouterFond).
+const LABELS = {
+  url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  subdomains: 'abcd',
+};
+
 function iconePoint(couleur, taille = 16) {
   return L.divIcon({
     className: '',
@@ -46,12 +59,23 @@ function iconePoint(couleur, taille = 16) {
 // demande utilisateur "je peux zoomer plus".
 const ZOOM_MAX = 19;
 function ajouterFond(map, id) {
-  return L.tileLayer(FONDS[id].url, {
+  const fond = L.tileLayer(FONDS[id].url, {
     attribution: FONDS[id].attribution,
     subdomains: FONDS[id].subdomains || 'abc',
     crossOrigin: true,
     maxZoom: ZOOM_MAX,
   }).addTo(map);
+  // Le fond "plan" a déjà ses propres noms de lieux (base CARTO Voyager) ;
+  // seul le satellite (sans aucun texte) a besoin du calque de labels.
+  if (id === 'satellite') {
+    L.tileLayer(LABELS.url, {
+      attribution: LABELS.attribution,
+      subdomains: LABELS.subdomains,
+      crossOrigin: true,
+      maxZoom: ZOOM_MAX,
+    }).addTo(map); // pane par défaut (tilePane) : sous le tracé du bassin, au-dessus du satellite
+  }
+  return fond;
 }
 
 function creerCarte(container, { interactive }) {

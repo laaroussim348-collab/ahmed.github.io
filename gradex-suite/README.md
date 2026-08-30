@@ -97,11 +97,16 @@ et les instructions de déploiement) :
    d'administration** (identique à `ADMIN_KEY` dans le script déployé —
    voir le panneau **Configuration** en bas de page pour le script à coller
    et les instructions de déploiement complètes) puis cliquez **Actualiser**.
-4. **Une fois le paiement reçu**, cliquez **✅ Activer** en face de la ligne
-   du client (retrouvable par son Identifiant Machine, qu'il vous aura
+4. **Une fois le paiement reçu**, choisissez une **durée** dans le menu en
+   face de la ligne du client (1 mois, 6 mois, 1 an, Permanent, ou
+   **Personnaliser…** pour un nombre de jours précis) puis cliquez
+   **✅ Activer** (retrouvable par son Identifiant Machine, qu'il vous aura
    communiqué, ou par sa date de première connexion) — **aucun code à lui
    transmettre**. Son application se débloque automatiquement au prochain
-   contrôle (toutes les 60s si elle est ouverte).
+   contrôle (toutes les 60s si elle est ouverte). Une licence à durée
+   limitée qui arrive à expiration repasse automatiquement "en attente" côté
+   plateforme (⚠️ Licence expirée) — reactivez-la avec le même bouton
+   **🔄 Renouveler** pour prolonger l'accès.
 5. **Pour bloquer un poste** : cliquez **⛔ Révoquer**. Effet au prochain
    contrôle (jusqu'à 7 jours de grâce si le poste était hors-ligne).
 
