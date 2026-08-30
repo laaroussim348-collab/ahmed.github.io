@@ -49,6 +49,14 @@ export function analyserDelimitation(watershed, rivers, exutoireLatLon) {
     }
   }
 
+  if (watershed.surfaceApproximee) {
+    avertissements.push(
+      "Surface calculée localement à partir du contour (le service de délimitation n'a pas renvoyé de valeur " +
+      "exploitable pour ce point) : moins précise qu'une mesure SIG directe — vérifiez si possible sur une carte " +
+      'topographique.'
+    );
+  }
+
   // Avertissement informatif seulement — la délimitation et le calcul des
   // caractéristiques restent effectués normalement quelle que soit la
   // surface obtenue (y compris pour les grands bassins versants, hors du

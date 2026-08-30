@@ -99,7 +99,12 @@ function creerCarte(container, { interactive }) {
   // Contrôle de zoom en bas à gauche : le coin haut-gauche est réservé au
   // panneau d'instructions (voir JSX), pour éviter le chevauchement.
   if (interactive) L.control.zoom({ position: 'bottomleft' }).addTo(map);
-  ajouterFond(map, 'satellite');
+  // "Plan" (CARTO Voyager) par défaut, pas "Satellite" (Esri) : l'imagerie
+  // satellite Esri a des trous de couverture par endroits (notamment zones
+  // rurales/éloignées), qui s'affichent comme des tuiles "Map data not yet
+  // available" — gênant et déroutant. CARTO Voyager est une carte
+  // vectorielle sans ce problème, et affiche déjà les noms de lieux.
+  ajouterFond(map, 'plan');
   return { map };
 }
 
@@ -384,7 +389,7 @@ export default function DelimitationCarte({ lat, lon, geometrie, loading, onConf
 
   const [plein, setPlein] = useState(false);
   const [candidat, setCandidat] = useState(null); // {lat, lon} choisi par clic, en attente de confirmation
-  const [fondActif, setFondActif] = useState('satellite');
+  const [fondActif, setFondActif] = useState('plan');
   const [exportMsg, setExportMsg] = useState(null);
   const [confirmErreur, setConfirmErreur] = useState(null);
   const [grilleActive, setGrilleActive] = useState(true);
