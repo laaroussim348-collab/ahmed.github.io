@@ -20,6 +20,7 @@
  * professionnel — voir docs/delimitation-bassin-versant.md.
  * -----------------------------------------------------------------------
  */
+import { airePolygoneApprox_km2 } from './geoMath.js';
 
 export function buildWatershedUrl(lat, lon) {
   const params = new URLSearchParams({ lat: String(lat), lng: String(lon), precision: 'high' });
@@ -48,12 +49,22 @@ export function parseWatershedResponse(geojson) {
     throw new Error("Réponse de délimitation inattendue : pas de polygone dans le GeoJSON renvoyé.");
   }
   const ring = feature.geometry.coordinates[0]; // anneau extérieur, [lon,lat][]
-  const surface_km2 = Number(feature.properties?.area_km2);
+  let surface_km2 = Number(feature.properties?.area_km2);
+  let surfaceApproximee = false;
   if (!(surface_km2 > 0)) {
-    throw new Error('La surface renvoyée par le service de délimitation est invalide.');
+    // mghydro.com renvoie parfois un contour exploitable sans area_km2
+    // valide (observé notamment sur de grands bassins versants) : plutôt
+    // que d'échouer complètement, on calcule la surface nous-mêmes à
+    // partir du contour renvoyé (approximation planaire — voir geoMath.js).
+    surface_km2 = airePolygoneApprox_km2(ring);
+    surfaceApproximee = true;
+  }
+  if (!(surface_km2 > 0)) {
+    throw new Error('La surface renvoyée par le service de délimitation est invalide, et le calcul de secours à partir du contour a également échoué.');
   }
   return {
     surface_km2,
+    surfaceApproximee,
     ring,
     outlet: feature.properties?.outlet_lat != null
       ? [feature.properties.outlet_lng, feature.properties.outlet_lat]

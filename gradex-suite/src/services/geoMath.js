@@ -51,12 +51,12 @@ export function perimetrePolygone(ring) {
 }
 
 /**
- * Surface approximative d'un polygone GeoJSON en km², par la formule de
- * l'aire sphérique de Girard (somme des excès angulaires), utile en
- * secours si l'API de délimitation ne fournit pas déjà l'aire (ce qui
- * est le cas pour mghydro.com : on utilise alors directement sa valeur
- * "area_km2", plus précise que cette approximation).
- * Non utilisée par défaut — fournie pour vérification croisée.
+ * Surface approximative d'un polygone GeoJSON en km² (projection
+ * équirectangulaire locale). Utilisée par delineationClient.js comme
+ * calcul de SECOURS quand mghydro.com ne renvoie pas de "area_km2"
+ * exploitable (observé sur certains grands bassins versants) — sa valeur
+ * "area_km2" reste préférée quand elle est disponible, plus précise que
+ * cette approximation planaire.
  */
 export function airePolygoneApprox_km2(ring) {
   // Approximation planaire locale (projection équirectangulaire autour du centroïde) :
