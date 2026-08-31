@@ -87,10 +87,28 @@ function sendJson(res, statusCode, obj) {
 // import('electron') hors Electron renverrait juste le chemin de
 // l'exécutable (chaîne de caractères), sans .clipboard ; le garde-fou
 // évite d'essayer.
-let clipboardElectron = null;
-if (process.versions?.electron) {
-  try { clipboardElectron = (await import('electron')).clipboard; }
-  catch { /* module indisponible : les routes /api/clipboard-* resteront en 404, ui.js retombe sur navigator.clipboard */ }
+//
+// Résolution VOLONTAIREMENT différée (pas au chargement du module, ici en
+// haut de server.mjs, qui est importé par electron-main.mjs AVANT même
+// app.whenReady()) — au premier appel réel d'une route /api/clipboard-*
+// seulement, à coup sûr après que la fenêtre soit affichée. Gère aussi les
+// deux formes possibles renvoyées par import('electron') d'un module
+// CommonJS depuis un fichier ESM : soit les propriétés nommées
+// directement (import interop les détecte), soit seulement `.default`
+// (objet CommonJS complet) selon la version de Node/Electron — un essai
+// précédent qui ne lisait que la forme nommée expliquerait que Copier
+// (retombé sur navigator.clipboard, qu'Electron autorise en écriture sans
+// permission) ait semblé fonctionner alors que Coller (lui vraiment
+// bloqué côté navigator.clipboard) restait cassé.
+let clipboardElectronPromise = null;
+function obtenirClipboardElectron() {
+  if (!process.versions?.electron) return Promise.resolve(null);
+  if (!clipboardElectronPromise) {
+    clipboardElectronPromise = import('electron')
+      .then((m) => m.clipboard || m.default?.clipboard || null)
+      .catch(() => null);
+  }
+  return clipboardElectronPromise;
 }
 
 // ---------------------------------------------------------------------
@@ -232,18 +250,24 @@ const server = http.createServer(async (req, res) => {
 
   // --- Presse-papiers : Copier/Coller doit marcher même écran d'activation affiché ---
   if (urlPath === '/api/clipboard-read' && req.method === 'GET') {
-    if (!clipboardElectron) { sendJson(res, 404, { ok: false, erreur: 'Presse-papiers natif indisponible (hors Electron).' }); return; }
-    sendJson(res, 200, { ok: true, texte: clipboardElectron.readText() });
+    const cb = await obtenirClipboardElectron();
+    if (!cb) { sendJson(res, 404, { ok: false, erreur: 'Presse-papiers natif indisponible (hors Electron).' }); return; }
+    try {
+      sendJson(res, 200, { ok: true, texte: cb.readText() });
+    } catch (e) {
+      sendJson(res, 500, { ok: false, erreur: e.message });
+    }
     return;
   }
   if (urlPath === '/api/clipboard-write' && req.method === 'POST') {
-    if (!clipboardElectron) { sendJson(res, 404, { ok: false, erreur: 'Presse-papiers natif indisponible (hors Electron).' }); return; }
+    const cb = await obtenirClipboardElectron();
+    if (!cb) { sendJson(res, 404, { ok: false, erreur: 'Presse-papiers natif indisponible (hors Electron).' }); return; }
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
       try {
         const { texte } = JSON.parse(body || '{}');
-        clipboardElectron.writeText(texte || '');
+        cb.writeText(texte || '');
         sendJson(res, 200, { ok: true });
       } catch (e) {
         sendJson(res, 400, { ok: false, erreur: e.message });

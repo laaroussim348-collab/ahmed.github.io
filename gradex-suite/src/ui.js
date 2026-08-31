@@ -254,21 +254,43 @@ function fixerValeurNative(el, valeur) {
 // installé) par toutes les autres API de l'appli (licence, délimitation,
 // export Word...). Repli sur navigator.clipboard si le serveur ne
 // répond pas 200 (hors Electron : navigateur classique en développement).
+// Erreur PRÉCISE (pas un message générique) sur tout le chemin — voir
+// docs/... : un message générique masquait la vraie cause à chaque essai
+// précédent, forçant à deviner à l'aveugle d'une itération à l'autre. Le
+// texte final affiché à l'utilisateur inclut maintenant soit la raison
+// renvoyée par server.mjs (échec du presse-papiers Electron natif — voir
+// server.mjs), soit celle de navigator.clipboard (nom/message de
+// l'exception, ex. NotAllowedError) si on est retombé sur ce repli.
 async function ecrirePressePapiers(texte) {
   try {
     const r = await fetch('/api/clipboard-write', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texte }),
     });
-    if (r.ok) { const d = await r.json(); if (d.ok) return; }
-  } catch { /* route absente (hors Electron) ou serveur injoignable : repli ci-dessous */ }
-  return navigator.clipboard.writeText(texte);
+    if (r.status !== 404) {
+      const d = await r.json().catch(() => null);
+      if (d?.ok) return;
+      throw new Error('serveur (' + (d?.erreur || r.status) + ')');
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('serveur (')) throw e;
+    // sinon : fetch lui-même a échoué (réseau) — on retombe silencieusement ci-dessous
+  }
+  try { return await navigator.clipboard.writeText(texte); }
+  catch (e) { throw new Error('navigateur (' + (e?.name || e?.message || 'refusé') + ')'); }
 }
 async function lirePressePapiers() {
   try {
     const r = await fetch('/api/clipboard-read');
-    if (r.ok) { const d = await r.json(); if (d.ok) return d.texte; }
-  } catch { /* route absente (hors Electron) ou serveur injoignable : repli ci-dessous */ }
-  return navigator.clipboard.readText();
+    if (r.status !== 404) {
+      const d = await r.json().catch(() => null);
+      if (d?.ok) return d.texte;
+      throw new Error('serveur (' + (d?.erreur || r.status) + ')');
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('serveur (')) throw e;
+  }
+  try { return await navigator.clipboard.readText(); }
+  catch (e) { throw new Error('navigateur (' + (e?.name || e?.message || 'refusé') + ')'); }
 }
 
 export async function copierChampActif(onDone) {
@@ -278,7 +300,7 @@ export async function copierChampActif(onDone) {
   const texte = debut !== fin ? el.value.slice(debut, fin) : el.value;
   if (!texte) { onDone?.('Rien à copier.'); return; }
   try { await ecrirePressePapiers(texte); onDone?.('Copié.'); }
-  catch { onDone?.('Copie impossible (presse-papiers refusé par le navigateur).'); }
+  catch (e) { onDone?.('Copie impossible — ' + (e?.message || 'presse-papiers refusé') + '.'); }
 }
 
 export async function couperChampActif(onDone) {
@@ -293,7 +315,7 @@ export async function couperChampActif(onDone) {
     fixerValeurNative(el, aSelection ? el.value.slice(0, debut) + el.value.slice(fin) : '');
     if (aSelection) { el.selectionStart = el.selectionEnd = debut; }
     onDone?.('Coupé.');
-  } catch { onDone?.('Coupe impossible (presse-papiers refusé par le navigateur).'); }
+  } catch (e) { onDone?.('Coupe impossible — ' + (e?.message || 'presse-papiers refusé') + '.'); }
 }
 
 export async function collerChampActif(onDone) {
@@ -307,7 +329,7 @@ export async function collerChampActif(onDone) {
     const position = debut + texte.length;
     el.selectionStart = el.selectionEnd = position;
     onDone?.('Collé.');
-  } catch { onDone?.('Collage impossible (presse-papiers refusé par le navigateur).'); }
+  } catch (e) { onDone?.('Collage impossible — ' + (e?.message || 'presse-papiers refusé') + '.'); }
 }
 
 export function esc(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
