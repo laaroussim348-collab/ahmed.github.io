@@ -68,9 +68,37 @@ function sendJson(res, statusCode, obj) {
 }
 
 // ---------------------------------------------------------------------
+// Presse-papiers natif Electron (src/ui.js, Copier/Couper/Coller) —
+// navigator.clipboard SEUL ne suffit pas : Electron n'accorde par défaut
+// aucune permission clipboard-read/clipboard-write au renderer (aucune
+// invite non plus, la promesse échoue juste en silence), d'où
+// "Copier/Coller ne marche pas" une fois le logiciel installé alors que ça
+// fonctionnait très bien en navigateur pendant le développement. Un
+// premier essai avait exposé le presse-papiers via un script preload
+// (contextBridge), sans effet constaté chez le client — remplacé ici par
+// une route HTTP sur CE MÊME serveur local, exactement comme toutes les
+// autres API (/api/activation-status, /api/delineation...) qui, elles,
+// fonctionnent déjà de façon confirmée dans le logiciel installé :
+// electron-main.mjs démarre server.mjs DANS le processus principal
+// d'Electron (pas le renderer), où require('electron').clipboard est
+// utilisable sans aucune restriction de permission ni de sandbox.
+// process.versions.electron n'est présent QUE si ce processus tourne
+// réellement sous le binaire Electron (pas `node server.mjs` en dev) —
+// import('electron') hors Electron renverrait juste le chemin de
+// l'exécutable (chaîne de caractères), sans .clipboard ; le garde-fou
+// évite d'essayer.
+let clipboardElectron = null;
+if (process.versions?.electron) {
+  try { clipboardElectron = (await import('electron')).clipboard; }
+  catch { /* module indisponible : les routes /api/clipboard-* resteront en 404, ui.js retombe sur navigator.clipboard */ }
+}
+
+// ---------------------------------------------------------------------
 // GET /api/activation-status  -> { active, raison?, expiresAt?, machineId, avertissement? }
 // GET /api/machine-id         -> { machineId }  (affiché sur l'écran d'activation)
 // POST /api/activer  {code}   -> { ok, expiresAt } ou { ok:false, erreur }
+// GET /api/clipboard-read     -> { ok, texte } (404 si hors Electron)
+// POST /api/clipboard-write {texte} -> { ok } (404 si hors Electron)
 // ---------------------------------------------------------------------
 async function apiActivationStatus(res) {
   // statut.essai est déjà positionné par activationClient.js (true en essai,
@@ -201,6 +229,28 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/api/activation-status' && req.method === 'GET') { await apiActivationStatus(res); return; }
   if (urlPath === '/api/machine-id' && req.method === 'GET') { apiMachineId(res); return; }
   if (urlPath === '/api/activer' && req.method === 'POST') { await apiActiver(req, res); return; }
+
+  // --- Presse-papiers : Copier/Coller doit marcher même écran d'activation affiché ---
+  if (urlPath === '/api/clipboard-read' && req.method === 'GET') {
+    if (!clipboardElectron) { sendJson(res, 404, { ok: false, erreur: 'Presse-papiers natif indisponible (hors Electron).' }); return; }
+    sendJson(res, 200, { ok: true, texte: clipboardElectron.readText() });
+    return;
+  }
+  if (urlPath === '/api/clipboard-write' && req.method === 'POST') {
+    if (!clipboardElectron) { sendJson(res, 404, { ok: false, erreur: 'Presse-papiers natif indisponible (hors Electron).' }); return; }
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      try {
+        const { texte } = JSON.parse(body || '{}');
+        clipboardElectron.writeText(texte || '');
+        sendJson(res, 200, { ok: true });
+      } catch (e) {
+        sendJson(res, 400, { ok: false, erreur: e.message });
+      }
+    });
+    return;
+  }
 
   // --- Routes API réseau (délimitation, pluviométrie) : réservées aux installations activées ---
   if (urlPath === '/api/delineation' || urlPath === '/api/pluviometrie') {

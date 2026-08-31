@@ -246,16 +246,28 @@ function fixerValeurNative(el, valeur) {
 // permission clipboard-read/clipboard-write côté renderer, sans la moindre
 // invite — la promesse échoue juste en silence, d'où "Copier/Coller ne
 // marche pas" une fois le logiciel installé, alors que la même fonction
-// marchait très bien en navigateur pendant le développement). electron-main.mjs
-// expose le presse-papiers natif (window.hydrocrueClipboard, voir
-// preload.cjs), prioritaire quand présent ; repli sur navigator.clipboard
-// sinon (navigateur classique).
-function ecrirePressePapiers(texte) {
-  if (window.hydrocrueClipboard) { window.hydrocrueClipboard.writeText(texte); return Promise.resolve(); }
+// marchait très bien en navigateur pendant le développement). Passe
+// d'abord par server.mjs (routes /api/clipboard-*, voir ce fichier) : ce
+// serveur local tourne dans le processus PRINCIPAL d'Electron, où le
+// presse-papiers natif est utilisable sans aucune restriction — c'est le
+// même canal déjà utilisé (et confirmé fonctionnel dans le logiciel
+// installé) par toutes les autres API de l'appli (licence, délimitation,
+// export Word...). Repli sur navigator.clipboard si le serveur ne
+// répond pas 200 (hors Electron : navigateur classique en développement).
+async function ecrirePressePapiers(texte) {
+  try {
+    const r = await fetch('/api/clipboard-write', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texte }),
+    });
+    if (r.ok) { const d = await r.json(); if (d.ok) return; }
+  } catch { /* route absente (hors Electron) ou serveur injoignable : repli ci-dessous */ }
   return navigator.clipboard.writeText(texte);
 }
-function lirePressePapiers() {
-  if (window.hydrocrueClipboard) return Promise.resolve(window.hydrocrueClipboard.readText());
+async function lirePressePapiers() {
+  try {
+    const r = await fetch('/api/clipboard-read');
+    if (r.ok) { const d = await r.json(); if (d.ok) return d.texte; }
+  } catch { /* route absente (hors Electron) ou serveur injoignable : repli ci-dessous */ }
   return navigator.clipboard.readText();
 }
 

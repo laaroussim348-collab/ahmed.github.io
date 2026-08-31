@@ -63,7 +63,6 @@
     "productName": "HydroCrue",
     "files": [
       "electron-main.mjs",
-      "preload.cjs",
       "server.mjs",
       "package.json",
       "build/**/*",
