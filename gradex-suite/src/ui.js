@@ -241,13 +241,31 @@ function fixerValeurNative(el, valeur) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// Presse-papiers : navigator.clipboard (API web) seul ne fonctionne PAS de
+// façon fiable dans l'app installée (Electron n'accorde par défaut aucune
+// permission clipboard-read/clipboard-write côté renderer, sans la moindre
+// invite — la promesse échoue juste en silence, d'où "Copier/Coller ne
+// marche pas" une fois le logiciel installé, alors que la même fonction
+// marchait très bien en navigateur pendant le développement). electron-main.mjs
+// expose le presse-papiers natif (window.hydrocrueClipboard, voir
+// preload.cjs), prioritaire quand présent ; repli sur navigator.clipboard
+// sinon (navigateur classique).
+function ecrirePressePapiers(texte) {
+  if (window.hydrocrueClipboard) { window.hydrocrueClipboard.writeText(texte); return Promise.resolve(); }
+  return navigator.clipboard.writeText(texte);
+}
+function lirePressePapiers() {
+  if (window.hydrocrueClipboard) return Promise.resolve(window.hydrocrueClipboard.readText());
+  return navigator.clipboard.readText();
+}
+
 export async function copierChampActif(onDone) {
   const el = champActif();
   if (!el) { onDone?.('Cliquez dans un champ, puis Copier.'); return; }
   const [debut, fin] = [el.selectionStart ?? 0, el.selectionEnd ?? el.value.length];
   const texte = debut !== fin ? el.value.slice(debut, fin) : el.value;
   if (!texte) { onDone?.('Rien à copier.'); return; }
-  try { await navigator.clipboard.writeText(texte); onDone?.('Copié.'); }
+  try { await ecrirePressePapiers(texte); onDone?.('Copié.'); }
   catch { onDone?.('Copie impossible (presse-papiers refusé par le navigateur).'); }
 }
 
@@ -259,7 +277,7 @@ export async function couperChampActif(onDone) {
   const texte = aSelection ? el.value.slice(debut, fin) : el.value;
   if (!texte) { onDone?.('Rien à couper.'); return; }
   try {
-    await navigator.clipboard.writeText(texte);
+    await ecrirePressePapiers(texte);
     fixerValeurNative(el, aSelection ? el.value.slice(0, debut) + el.value.slice(fin) : '');
     if (aSelection) { el.selectionStart = el.selectionEnd = debut; }
     onDone?.('Coupé.');
@@ -270,7 +288,7 @@ export async function collerChampActif(onDone) {
   const el = champActif();
   if (!el) { onDone?.('Cliquez dans un champ avant de coller.'); return; }
   try {
-    const texte = await navigator.clipboard.readText();
+    const texte = await lirePressePapiers();
     if (!texte) { onDone?.('Presse-papiers vide.'); return; }
     const [debut, fin] = [el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length];
     fixerValeurNative(el, el.value.slice(0, debut) + texte + el.value.slice(fin));
