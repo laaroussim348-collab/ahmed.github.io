@@ -38,11 +38,6 @@ function creerFenetre() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      // Expose le presse-papiers natif (window.hydrocrueClipboard) — voir
-      // preload.cjs : navigator.clipboard seul ne fonctionne pas de façon
-      // fiable dans Electron (permissions non accordées par défaut, sans
-      // invite), ce qui rendait Copier/Coller inopérants une fois installé.
-      preload: path.join(__dirname, 'preload.cjs'),
     },
     show: false,
   });
