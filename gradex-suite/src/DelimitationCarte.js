@@ -54,22 +54,16 @@ function iconePoint(couleur, taille = 16) {
 // Détecte la tuile de remplacement "Map data not yet available" qu'Esri
 // renvoie (avec un HTTP 200, pas une erreur réseau — errorTileUrl ne peut
 // donc pas la voir) pour les tuiles sans imagerie disponible à cet endroit
-// à ce niveau de zoom. Deux indices combinés (aucun des deux seul n'est
-// fiable) :
-//  1. Poids transféré très faible : une vraie photo aérienne (texture
-//     naturelle, beaucoup de détail) compresse toujours à plusieurs
-//     dizaines de Ko ; l'image de remplacement (fond uni + texte) ne pèse
-//     que quelques Ko.
-//  2. Couleur moyenne gris neutre et quasi uniforme : élimine les tuiles
-//     réellement uniformes mais colorées (mer, lac, désert) qui pourraient
-//     sinon être prises à tort pour le placeholder à cause du critère 1
-//     seul.
+// à ce niveau de zoom. Analyse uniquement le CONTENU de l'image (couleur
+// gris neutre quasi uniforme, sans la variation naturelle d'une vraie
+// photo aérienne) — un premier essai comparait aussi le poids transféré
+// (Performance API), mais celui-ci vaut 0 dès qu'une tuile est servie
+// depuis le cache navigateur plutôt que le réseau (fréquent en navigant/
+// zoomant), ce qui désactivait la détection silencieusement après les
+// tout premiers chargements. Le contenu décodé, lui, est identique que la
+// tuile vienne du réseau ou du cache.
 function estTuilePlaceholder(img) {
   try {
-    const entrees = performance.getEntriesByName(img.src);
-    const poids = entrees.length ? entrees[entrees.length - 1].encodedBodySize : 0;
-    if (!(poids > 0) || poids >= 8000) return false;
-
     const c = document.createElement('canvas');
     c.width = 8; c.height = 8;
     const ctx = c.getContext('2d');
@@ -90,11 +84,20 @@ function estTuilePlaceholder(img) {
   }
 }
 
-// maxZoom 19 (au lieu de 18) : gain de détail au dézoom max — demande
-// utilisateur "je peux zoomer plus". La couverture Esri n'est pas garantie
-// jusque-là partout (voir estTuilePlaceholder), mais plafonner plus bas
-// pénaliserait sans raison les zones où elle l'est.
-const ZOOM_MAX = 19;
+// Zoom plafonné à 17 (~1,2 m/pixel), pas 19 : Esri ne garantit sa
+// résolution la plus fine (18-19) que dans les zones urbaines/développées
+// — au-delà, dans les zones rurales/montagneuses (là où se trouvent
+// justement les grands bassins versants étudiés ici), les tuiles
+// n'existent pas et Esri renvoie sa tuile de remplacement "Map data not
+// yet available". Aucun plafond fixe n'est garanti à 100% partout, mais
+// 17 réduit fortement le risque tout en restant largement assez précis
+// pour repérer un exutoire (buse, pont, lit du cours d'eau) — retour
+// utilisateur du 30/08/2026, après un plafond à 19 (2 messages plus haut,
+// "je peux zoomer plus") puis une détection par contenu seule jugée
+// insuffisante ("tu ne solve pas ce probleme"). La détection par contenu
+// ci-dessus reste active en complément, pour les rares cas où même ce
+// niveau manquerait de couverture.
+const ZOOM_MAX = 17;
 function ajouterFond(map) {
   const fond = L.tileLayer(SATELLITE.url, {
     attribution: SATELLITE.attribution,
@@ -102,9 +105,6 @@ function ajouterFond(map) {
     maxZoom: ZOOM_MAX,
   }).addTo(map);
   fond.on('tileload', (e) => {
-    // La ressource n'apparaît dans les Performance Entries qu'une fois la
-    // requête réseau terminée — c'est déjà le cas à cet instant (tileload
-    // ne se déclenche qu'après chargement complet), pas besoin d'attendre.
     if (estTuilePlaceholder(e.tile)) e.tile.style.visibility = 'hidden';
   });
   L.tileLayer(LABELS.url, {
