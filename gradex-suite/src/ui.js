@@ -339,6 +339,27 @@ export async function collerChampActif(onDone) {
   try {
     const texte = await lirePressePapiers();
     if (!texte) { onDone?.('Presse-papiers vide.'); return; }
+    if (el.type === 'number') {
+      // Un champ numérique n'a pas de notion de curseur/insertion (voir
+      // placerCurseur ci-dessus) : coller y remplace TOUJOURS la valeur
+      // entière, jamais une insertion à une position. Et surtout, un
+      // <input type="number"> REJETTE SILENCIEUSEMENT toute valeur non
+      // numérique — le setter natif "réussit" sans lever d'exception, mais
+      // le champ reste vide. Sans ce contrôle, coller un tableau
+      // multi-lignes (copié depuis Excel, par ex. une série Pjmax) dans un
+      // champ comme Latitude affichait "Collé." tout en laissant le champ
+      // vide : succès en apparence, échec silencieux en réalité — retour
+      // utilisateur du 01/09/2026 ("il affiche un message qui coller mai
+      // il colle rien"), reproduit tel quel.
+      const nombre = texte.trim();
+      if (nombre === '' || !Number.isFinite(Number(nombre))) {
+        onDone?.("Le presse-papiers ne contient pas un nombre valide pour ce champ.");
+        return;
+      }
+      fixerValeurNative(el, nombre);
+      onDone?.('Collé.');
+      return;
+    }
     const [debut, fin] = [el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length];
     fixerValeurNative(el, el.value.slice(0, debut) + texte + el.value.slice(fin));
     placerCurseur(el, debut + texte.length);
