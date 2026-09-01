@@ -303,6 +303,21 @@ export async function copierChampActif(onDone) {
   catch (e) { onDone?.('Copie impossible — ' + (e?.message || 'presse-papiers refusé') + '.'); }
 }
 
+// Certains types de <input> HTML (number, email, date...) n'implémentent
+// pas la sélection de texte : LIRE selectionStart/selectionEnd y renvoie
+// simplement null (déjà géré par les ?? ci-dessous), mais les RÉASSIGNER
+// lève une exception — observé en pratique : "Failed to set the
+// 'selectionEnd' property on 'HTMLInputElement': The input element's type
+// ('number') does not support selection." Couper/Coller échouaient donc
+// entièrement sur ce type de champ (très courant dans cette appli :
+// surface, altitudes, coordonnées...), alors que la valeur elle-même avait
+// déjà été correctement modifiée juste avant — seul le repositionnement du
+// curseur posait problème. Best-effort, ne doit jamais faire échouer
+// l'opération pour autant.
+function placerCurseur(el, position) {
+  try { el.selectionStart = el.selectionEnd = position; } catch { /* type de champ sans support de sélection : sans conséquence */ }
+}
+
 export async function couperChampActif(onDone) {
   const el = champActif();
   if (!el) { onDone?.('Cliquez dans un champ, puis Couper.'); return; }
@@ -313,7 +328,7 @@ export async function couperChampActif(onDone) {
   try {
     await ecrirePressePapiers(texte);
     fixerValeurNative(el, aSelection ? el.value.slice(0, debut) + el.value.slice(fin) : '');
-    if (aSelection) { el.selectionStart = el.selectionEnd = debut; }
+    if (aSelection) placerCurseur(el, debut);
     onDone?.('Coupé.');
   } catch (e) { onDone?.('Coupe impossible — ' + (e?.message || 'presse-papiers refusé') + '.'); }
 }
@@ -326,8 +341,7 @@ export async function collerChampActif(onDone) {
     if (!texte) { onDone?.('Presse-papiers vide.'); return; }
     const [debut, fin] = [el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length];
     fixerValeurNative(el, el.value.slice(0, debut) + texte + el.value.slice(fin));
-    const position = debut + texte.length;
-    el.selectionStart = el.selectionEnd = position;
+    placerCurseur(el, debut + texte.length);
     onDone?.('Collé.');
   } catch (e) { onDone?.('Collage impossible — ' + (e?.message || 'presse-papiers refusé') + '.'); }
 }
